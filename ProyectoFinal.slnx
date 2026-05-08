@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="AgenteAccion/AgenteAccion.csproj" />
+  <Project Path="AgenteEnrutador/AgenteEnrutador.csproj" />
+  <Project Path="AgenteEntrada/AgenteEntrada.csproj" />
+  <Project Path="McpServer/McpServer.csproj" />
+</Solution>
