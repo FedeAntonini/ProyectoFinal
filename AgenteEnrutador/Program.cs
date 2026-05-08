@@ -6,8 +6,7 @@ using System.ClientModel;
 
 var API_KEY = Environment.GetEnvironmentVariable("GROQ_API_KEY")
     ?? throw new Exception("Falta la variable de entorno GROQ_API_KEY");
-const string MODELO = "llama-3.3-70b-versatile";
-//const string MODELO = "llama-3.1-8b-instant";
+const string MODELO = "llama-3.1-8b-instant";
 
 Console.WriteLine("Conectando al MCP Server...");
 
@@ -38,15 +37,21 @@ IChatClient agente = new OpenAIClient(
     .Build();
 
 var systemPrompt = new ChatMessage(ChatRole.System, """
-    Sos el Agente Enrutador de soporte de e-commerce.
+    Sos el Agente Enrutador de soporte de e-commerce nivel 1.
     
-    Cuando recibas un mensaje con un ID de ticket:
-    - Llamá a obtener_ticket con ese ID
-    - Llamá a diagnosticar_problema con la descripción y sistema del ticket
-    - Respondé con: DELEGAR_A: [nombre del agente]
+    Cuando recibas un ID de ticket:
+    1. Llamá a la tool obtener_ticket para obtener los datos del ticket
+    2. Si la tool devuelve que el ticket no fue encontrado, respondé exactamente:
+       TICKET_NO_ENCONTRADO: No se encontró un ticket con ese ID.
+    3. Si el ticket existe, leé el campo "Sistema" del resultado y respondé ÚNICAMENTE con una de estas líneas:
+       - Si Sistema es "usuarios": DELEGAR_A: AgenteAccionAcceso
+       - Si Sistema es "pedidos": DELEGAR_A: AgenteAccionPedido
+       - Si Sistema es "pagos": DELEGAR_A: AgenteAccionPago
+       - Si Sistema es "catalogo": DELEGAR_A: AgenteAccionPrecio
+       - Si Sistema es "stock": DELEGAR_A: AgenteAccionStock
+       - Si no reconocés el sistema: DELEGAR_A: Escalacion
     
-    Cuando recibas un mensaje sin ID de ticket válido:
-    - Respondé: "Input inválido. Ingresá un ID de ticket válido (ejemplo: INC0001)."
+    No agregues texto adicional. No incluyas tags XML ni HTML. Solo respondé con la línea indicada.
     """);
 
 Console.WriteLine("=== Agente Enrutador — E-Commerce Soporte N1 ===");
@@ -59,22 +64,32 @@ while (true)
     var input = Console.ReadLine();
     if (string.IsNullOrWhiteSpace(input) || input.ToLower() == "salir") break;
 
-    // Validar formato del ticket antes de mandar al modelo
-    if (!System.Text.RegularExpressions.Regex.IsMatch(input.Trim(), @"INC\d{4}", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+    var match = System.Text.RegularExpressions.Regex.Match(
+        input.Trim(),
+        @"INC\d{4}",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
-{
-    Console.WriteLine("\n[Enrutador] Input inválido. Ingresá un ID de ticket válido (ejemplo: INC0001).\n");
-    continue;
-}
-    
+    if (!match.Success)
+    {
+        Console.WriteLine("\n[Enrutador] Input inválido. Ingresá un ID de ticket válido (ejemplo: INC0001).\n");
+        continue;
+    }
+
+    var ticketId = match.Value.ToUpper();
+
     try
     {
         var respuesta = await agente.GetResponseAsync(
-            [systemPrompt, new(ChatRole.User, input)],
+            [systemPrompt, new(ChatRole.User, ticketId)],
             new ChatOptions { Tools = [.. toolsEnrutador] }
         );
 
-        Console.WriteLine($"\n[Enrutador] {respuesta.Text}\n");
+        var texto = respuesta.Text ?? "";
+
+        if (texto.Contains("TICKET_NO_ENCONTRADO", StringComparison.OrdinalIgnoreCase))
+            Console.WriteLine($"\n[Enrutador] No se encontró un ticket con ese ID.\n");
+        else
+            Console.WriteLine($"\n[Enrutador] {texto}\n");
     }
     catch (Exception ex)
     {

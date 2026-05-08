@@ -80,7 +80,7 @@ public static class ToolsEnrutador
             "usuarios" => "{ \"agente\": \"AgenteAccionAcceso\", \"accion\": \"resetear_acceso\", \"confianza\": \"alta\" }",
             "pedidos"  => "{ \"agente\": \"AgenteAccionPedido\", \"accion\": \"consultar_estado_pedido\", \"confianza\": \"alta\" }",
             "pagos"    => "{ \"agente\": \"AgenteAccionPago\", \"accion\": \"consultar_pago\", \"confianza\": \"alta\" }",
-            "catalogo" => "{ \"agente\": \"AgenteAccionPrecio\", \"accion\": \"corregir_precio\", \"confianza\": \"alta\" }",
+            "catalogo" or "precio" => "{ \"agente\": \"AgenteAccionPrecio\", \"accion\": \"corregir_precio\", \"confianza\": \"alta\" }",
             "stock"    => "{ \"agente\": \"AgenteAccionStock\", \"accion\": \"sincronizar_stock\", \"confianza\": \"alta\" }",
             _          => "{ \"agente\": \"Escalacion\", \"accion\": \"escalar_nivel2\", \"confianza\": \"baja\" }"
         };
