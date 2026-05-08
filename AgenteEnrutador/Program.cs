@@ -6,7 +6,7 @@ using System.ClientModel;
 
 var API_KEY = Environment.GetEnvironmentVariable("GROQ_API_KEY")
     ?? throw new Exception("Falta la variable de entorno GROQ_API_KEY");
-const string MODELO = "llama-3.1-8b-instant";
+const string MODELO = "llama-3.3-70b-versatile";
 
 Console.WriteLine("Conectando al MCP Server...");
 
@@ -21,7 +21,7 @@ await using var mcp = await McpClient.CreateAsync(transporte);
 var todasLasTools = await mcp.ListToolsAsync();
 
 var toolsEnrutador = todasLasTools
-    .Where(t => t.Name is "obtener_ticket" or "diagnosticar_problema")
+    .Where(t => t.Name is "obtener_ticket")
     .ToList();
 
 IChatClient agente = new OpenAIClient(
@@ -40,18 +40,18 @@ var systemPrompt = new ChatMessage(ChatRole.System, """
     Sos el Agente Enrutador de soporte de e-commerce nivel 1.
     
     Cuando recibas un ID de ticket:
-    1. Llamá a la tool obtener_ticket para obtener los datos del ticket
-    2. Si la tool devuelve que el ticket no fue encontrado, respondé exactamente:
-       TICKET_NO_ENCONTRADO: No se encontró un ticket con ese ID.
-    3. Si el ticket existe, leé el campo "Sistema" del resultado y respondé ÚNICAMENTE con una de estas líneas:
-       - Si Sistema es "usuarios": DELEGAR_A: AgenteAccionAcceso
-       - Si Sistema es "pedidos": DELEGAR_A: AgenteAccionPedido
-       - Si Sistema es "pagos": DELEGAR_A: AgenteAccionPago
-       - Si Sistema es "catalogo": DELEGAR_A: AgenteAccionPrecio
-       - Si Sistema es "stock": DELEGAR_A: AgenteAccionStock
-       - Si no reconocés el sistema: DELEGAR_A: Escalacion
+    1. Llamá a la tool obtener_ticket para obtener los datos
+    2. Si el ticket no existe, respondé: TICKET_NO_ENCONTRADO: No se encontró un ticket con ese ID.
+    3. Si el ticket existe, analizá el problema y el sistema afectado y decidí cuál de estos agentes es el más adecuado para resolverlo:
+       - AgenteAccionAcceso: problemas de login, autenticación o acceso de usuarios
+       - AgenteAccionPedido: problemas con el estado o seguimiento de pedidos
+       - AgenteAccionPago: problemas con pagos, cobros o transacciones
+       - AgenteAccionPrecio: problemas con precios incorrectos en el catálogo
+       - AgenteAccionStock: problemas con inventario o sincronización de stock
+       - Escalacion: si el problema no encaja en ninguno de los anteriores
+    4. Respondé ÚNICAMENTE con: DELEGAR_A: [nombre del agente elegido]
     
-    No agregues texto adicional. No incluyas tags XML ni HTML. Solo respondé con la línea indicada.
+    No incluyas tags XML ni HTML. No agregues texto adicional.
     """);
 
 Console.WriteLine("=== Agente Enrutador — E-Commerce Soporte N1 ===");
