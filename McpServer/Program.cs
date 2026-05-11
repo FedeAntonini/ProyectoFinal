@@ -3,8 +3,10 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
+using McpServer.MessageQueue;
+using McpServer.Agentes;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.AddConsole(options =>
 {
@@ -13,11 +15,34 @@ builder.Logging.AddConsole(options =>
 
 builder.Services
     .AddMcpServer()
-    .WithStdioServerTransport()
+    .WithHttpTransport()
     .WithToolsFromAssembly();
 
-await builder.Build().RunAsync();
+builder.Services.AddScoped<AgenteEntrada>();
 
+if (!builder.Environment.IsDevelopment())
+{
+    builder.Services.AddMessageQueues(builder.Configuration);
+    builder.Services.AddHostedService<QueueWorker>();
+}
+
+var app = builder.Build();
+
+app.MapMcp("/mcp");
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapPost("/dev/procesar", async (
+        InboundMessage message,
+        AgenteEntrada entrada) =>
+    {
+        var entradaResult = await entrada.ProcessAsync(message);
+
+        return Results.Ok();
+    });
+}
+
+app.Run();
 
 // ============================================================
 // TOOLS DEL AGENTE ENTRADA
