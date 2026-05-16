@@ -5,6 +5,8 @@ using ModelContextProtocol.Server;
 using System.ComponentModel;
 using McpServer.MessageQueue;
 using McpServer.Agentes;
+using McpServer.Services;
+using McpServer.Api;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,6 +21,9 @@ builder.Services
     .WithToolsFromAssembly();
 
 builder.Services.AddScoped<AgenteEntrada>();
+builder.Services.AddLlmServices(builder.Configuration);
+builder.Services.AddApiServices(builder.Configuration);
+
 
 if (!builder.Environment.IsDevelopment())
 {
