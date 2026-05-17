@@ -1,44 +1,72 @@
-﻿using System.Text.Json;
-using McpServer.Api.AgentStep;
-using McpServer.Api.AgentStep.Dto;
-using McpServer.MessageQueue;
-using Microsoft.Extensions.DependencyInjection;
+﻿using McpServer.MessageQueue;
+using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
+using System.Text.Json;
 
 namespace McpServer.Services;
 
 public class LlmGateway
 {
     private readonly ILlmService _llm;
-    private readonly IAgentStepService _agentStepService;
-    private readonly string _targetAgent;
+    private readonly string _modelo;
 
-    public LlmGateway(
-        ILlmService llm,
-        IAgentStepService agentStepService,
-        IConfiguration config)
+    public LlmGateway(ILlmService llm, IConfiguration config)
     {
         _llm = llm;
-        _agentStepService = agentStepService;
-        _targetAgent = config["Groq:Modelo"]!;
+        _modelo = config["Groq:Modelo"]!;
     }
 
     public async Task<string> CompleteAsync(
+        McpClient mcpClient,
         InboundMessage inbound,
         int agentRunId,
         string agentType,
         string prompt,
         CancellationToken ct = default)
     {
-        var step = await _agentStepService.CreateAsync(new CreateAgentStepRequest(
-            AgentRunId: agentRunId,
-            AgentType: agentType,
-            InputData: prompt
-        ), ct);
+        var step = await CreateAgentStepAsync(mcpClient, agentRunId, agentType, prompt, ct);
 
         var response = await _llm.CompleteAsync(prompt, ct);
 
-        await _agentStepService.UpdateAsync(step.Id, "completed", response, ct);
+        await mcpClient.CallToolAsync(
+            "update_agent_step",
+            new Dictionary<string, object?>
+            {
+                ["stepId"] = step.Id,
+                ["status"] = "completed",
+                ["outputData"] = response
+            },
+            cancellationToken: ct);
 
         return response;
     }
+
+    private async Task<AgentStepResult> CreateAgentStepAsync(
+        McpClient mcpClient,
+        int agentRunId,
+        string agentType,
+        string inputData,
+        CancellationToken ct)
+    {
+        var result = await mcpClient.CallToolAsync(
+            "create_agent_step",
+            new Dictionary<string, object?>
+            {
+                ["agentRunId"] = agentRunId,
+                ["agentType"] = agentType,
+                ["inputData"] = inputData
+            },
+            cancellationToken: ct);
+
+        var text = result.Content
+            .OfType<TextContentBlock>()
+            .FirstOrDefault()?.Text
+            ?? throw new InvalidOperationException("create_agent_step returned no text content.");
+
+        return JsonSerializer.Deserialize<AgentStepResult>(text,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+            ?? throw new InvalidOperationException("Failed to deserialize agent step.");
+    }
+
+    private record AgentStepResult(int Id, int AgentRunId, string AgentType, string InputData, string OutputData, string Status, DateTime CreatedAt);
 }

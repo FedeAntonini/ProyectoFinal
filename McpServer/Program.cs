@@ -31,9 +31,8 @@ if (!builder.Environment.IsDevelopment())
     builder.Services.AddHostedService<QueueWorker>();
 }
 
-var app = builder.Build();
 
-app.MapMcp("/mcp");
+var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
@@ -42,10 +41,11 @@ if (app.Environment.IsDevelopment())
         AgenteEntrada entrada) =>
     {
         var entradaResult = await entrada.ProcessAsync(message);
-
         return Results.Ok();
     });
 }
+
+app.MapMcp("/mcp");
 
 app.Run();
 
