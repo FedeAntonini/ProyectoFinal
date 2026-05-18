@@ -18,9 +18,4 @@
 	<PackageReference Include="OpenAI" Version="2.10.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Api\Auth\" />
-    <Folder Include="Tools\" />
-  </ItemGroup>
-
 </Project>

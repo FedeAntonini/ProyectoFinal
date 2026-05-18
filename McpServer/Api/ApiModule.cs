@@ -1,6 +1,9 @@
 ﻿using McpServer.Api.AgentRun;
 using McpServer.Api.AgentStep;
 using McpServer.Api.Auth;
+using McpServer.Api.Conversations;
+using McpServer.Api.Messages;
+using McpServer.Api.Tickets;
 
 namespace McpServer.Api;
 
@@ -18,6 +21,15 @@ public static class ApiModule
                 .AddHttpMessageHandler<AuthHandler>();
 
         services.AddHttpClient<IAgentStepService, AgentStepService>(c => c.BaseAddress = new Uri(baseUrl))
+                .AddHttpMessageHandler<AuthHandler>();
+
+        services.AddHttpClient<ITicketService, TicketService>(c => c.BaseAddress = new Uri(baseUrl))
+                .AddHttpMessageHandler<AuthHandler>();
+
+        services.AddHttpClient<IConversationService, ConversationService>(c => c.BaseAddress = new Uri(baseUrl))
+                .AddHttpMessageHandler<AuthHandler>();
+
+        services.AddHttpClient<IMessageService, MessageService>(c => c.BaseAddress = new Uri(baseUrl))
                 .AddHttpMessageHandler<AuthHandler>();
 
         services.AddHttpClient<IAuthService, AuthService>(c => c.BaseAddress = new Uri(baseUrl));

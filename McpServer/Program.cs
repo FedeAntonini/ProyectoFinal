@@ -7,6 +7,8 @@ using McpServer.MessageQueue;
 using McpServer.Agentes;
 using McpServer.Services;
 using McpServer.Api;
+using Microsoft.AspNetCore.Mvc;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,8 +23,14 @@ builder.Services
     .WithToolsFromAssembly();
 
 builder.Services.AddScoped<AgenteEntrada>();
+builder.Services.AddScoped<AgenteConversacion>();
 builder.Services.AddLlmServices(builder.Configuration);
 builder.Services.AddApiServices(builder.Configuration);
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+});
 
 
 if (!builder.Environment.IsDevelopment())
@@ -34,18 +42,29 @@ if (!builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
-{
-    app.MapPost("/dev/procesar", async (
-        InboundMessage message,
-        AgenteEntrada entrada) =>
-    {
-        var entradaResult = await entrada.ProcessAsync(message);
-        return Results.Ok();
-    });
-}
-
 app.MapMcp("/mcp");
+
+app.MapGet("/debug/tools", () =>
+{
+    var assembly = typeof(Program).Assembly;
+
+    var tools = assembly
+        .GetTypes()
+        .Where(t => t.GetCustomAttributes(typeof(McpServerToolTypeAttribute), true).Any())
+        .Select(t => new
+        {
+            ToolType = t.FullName,
+            Methods = t.GetMethods()
+                .Where(m => m.GetCustomAttributes(typeof(McpServerToolAttribute), true).Any())
+                .Select(m => new
+                {
+                    Method = m.Name,
+                    ReturnType = m.ReturnType.FullName
+                })
+        });
+
+    return Results.Json(tools);
+});
 
 app.Run();
 

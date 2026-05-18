@@ -3,6 +3,8 @@ using McpServer.Services;
 using System.Text.Json;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using Microsoft.Extensions.AI;
+
 namespace McpServer.Agentes;
 
 public class AgenteEntrada
@@ -10,6 +12,24 @@ public class AgenteEntrada
     private readonly ILogger<AgenteEntrada> _logger;
     private readonly LlmGateway _gateway;
     private readonly IConfiguration _config;
+
+    private const string SystemPrompt = """
+    Sos el Agente Enrutador de soporte de e-commerce nivel 1.
+
+    Cuando recibas un ID de ticket:
+    1. Llamá a la tool obtener_ticket para obtener los datos
+    2. Si el ticket no existe, respondé: TICKET_NO_ENCONTRADO: No se encontró un ticket con ese ID.
+    3. Si el ticket existe, analizá el problema y el sistema afectado y decidí cuál de estos agentes es el más adecuado para resolverlo:
+       - AgenteAccionAcceso: problemas de login, autenticación o acceso de usuarios
+       - AgenteAccionPedido: problemas con el estado o seguimiento de pedidos
+       - AgenteAccionPago: problemas con pagos, cobros o transacciones
+       - AgenteAccionPrecio: problemas con precios incorrectos en el catálogo
+       - AgenteAccionStock: problemas con inventario o sincronización de stock
+       - Escalacion: si el problema no encaja en ninguno de los anteriores
+    4. Respondé ÚNICAMENTE con: DELEGAR_A: [nombre del agente elegido]
+
+    No incluyas tags XML ni HTML. No agregues texto adicional.
+    """;
 
     public AgenteEntrada(
         ILogger<AgenteEntrada> logger,
@@ -37,12 +57,28 @@ public class AgenteEntrada
             runId,
             message.TicketId);
 
-         var prompt = BuildPrompt(message);
-         var response = await _gateway.CompleteAsync(message, runId, nameof(AgenteEntrada), prompt, ct);
+        var messages = BuildMessages(message);
+
+        var response = await _gateway.CompleteAsync(
+            mcpClient,
+            SystemPrompt,
+            messages,
+            runId,
+            nameof(AgenteEntrada),
+            ct);
+
+        _logger.LogInformation("Respuesta de LLM recibida: {Response}", response);
 
         await UpdateAgentRunStatusAsync(mcpClient, runId, "completed", ct);
+
         return EntradaResult.Accepted(message);
     }
+
+    private static IEnumerable<ChatMessage> BuildMessages(InboundMessage message) =>
+    [
+        new(ChatRole.User, $"Ticket {message.TicketId}: {message.Payload}")
+    ];
+
     private async Task<McpClient> CreateMcpClientAsync(CancellationToken ct)
     {
         var mcpUrl = _config["McpServer:BaseUrl"] ?? throw new InvalidOperationException("Missing McpServer:BaseUrl");
@@ -82,9 +118,6 @@ public class AgenteEntrada
             new Dictionary<string, object?> { ["runId"] = runId, ["status"] = status },
             cancellationToken: ct);
     }
-
-    private string BuildPrompt(InboundMessage message) =>
-        $"Ticket {message.TicketId}: {message.Metadata}";
 
     private record AgentRunResult(int Id, int TicketId, string Status, DateTime StartedAt, DateTime? EndedAt);
 }

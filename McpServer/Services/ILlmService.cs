@@ -1,6 +1,6 @@
-﻿namespace McpServer.Services;
+﻿using Microsoft.Extensions.AI;
 
 public interface ILlmService
 {
-    Task<string> CompleteAsync(string prompt, CancellationToken ct = default);
+    Task<string> CompleteAsync(string systemPrompt, IEnumerable<ChatMessage> messages, CancellationToken ct = default);
 }

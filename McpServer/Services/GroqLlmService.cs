@@ -7,27 +7,25 @@ namespace McpServer.Services;
 public class GroqLlmService : ILlmService
 {
     private readonly IChatClient _client;
-    private readonly string _systemPrompt;
 
-    public GroqLlmService(IChatClient client, string systemPrompt)
+    public GroqLlmService(IChatClient client)
     {
         _client = client;
-        _systemPrompt = systemPrompt;
     }
 
-    public async Task<string> CompleteAsync(string prompt, CancellationToken ct = default)
+    public async Task<string> CompleteAsync(string systemPrompt, IEnumerable<ChatMessage> messages, CancellationToken ct = default)
     {
-        var messages = new List<ChatMessage>
+        var fullMessages = new List<ChatMessage>
         {
-            new(ChatRole.System, _systemPrompt),
-            new(ChatRole.User, prompt)
+            new(ChatRole.System, systemPrompt)
         };
+        fullMessages.AddRange(messages);
 
-        var response = await _client.GetResponseAsync(messages, cancellationToken: ct);
+        var response = await _client.GetResponseAsync(fullMessages, cancellationToken: ct);
         return response.Text;
     }
 
-    public static GroqLlmService Create(string apiKey, string model, string systemPrompt)
+    public static GroqLlmService Create(string apiKey, string model)
     {
         var client = new OpenAIClient(
                 new ApiKeyCredential(apiKey),
@@ -38,6 +36,6 @@ public class GroqLlmService : ILlmService
             .UseFunctionInvocation()
             .Build();
 
-        return new GroqLlmService(client, systemPrompt);
+        return new GroqLlmService(client);
     }
 }

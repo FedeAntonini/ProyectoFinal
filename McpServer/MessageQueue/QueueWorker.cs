@@ -1,6 +1,8 @@
 ﻿using System.Text.Json;
 using McpServer.Agentes;
+
 namespace McpServer.MessageQueue;
+
 public class QueueWorker : BackgroundService
 {
     private readonly IMessageQueue _inbound;
@@ -23,13 +25,11 @@ public class QueueWorker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Queue worker started");
-
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 var messages = await _inbound.ReceiveMessagesAsync(10, stoppingToken);
-
                 foreach (var message in messages)
                     await ProcessMessageAsync(message, stoppingToken);
             }
@@ -44,7 +44,6 @@ public class QueueWorker : BackgroundService
     private async Task ProcessMessageAsync(QueueMessage message, CancellationToken stoppingToken)
     {
         _logger.LogInformation("Procesando mensaje {MessageId}", message.MessageId);
-
         try
         {
             var inbound = JsonSerializer.Deserialize<InboundMessage>(message.Body, new JsonSerializerOptions
@@ -53,12 +52,10 @@ public class QueueWorker : BackgroundService
             }) ?? throw new InvalidOperationException("No se pudo deserializar el mensaje");
 
             using var scope = _scopeFactory.CreateScope();
-            var router = scope.ServiceProvider.GetRequiredService<AgenteEntrada>();
-
-            var result = await router.ProcessAsync(inbound);
+            var dispatcher = scope.ServiceProvider.GetRequiredService<MessageDispatcher>();
+            await dispatcher.DispatchAsync(inbound, stoppingToken);
 
             await _inbound.DeleteMessageAsync(message.ReceiptHandle, stoppingToken);
-
             _logger.LogInformation("Mensaje {MessageId} procesado exitosamente", message.MessageId);
         }
         catch (Exception ex)

@@ -1,5 +1,8 @@
 ﻿using Amazon.SQS;
+using McpServer.Agentes;
+
 namespace McpServer.MessageQueue;
+
 public static class QueueModule
 {
     public static IServiceCollection AddMessageQueues(
@@ -16,6 +19,11 @@ public static class QueueModule
 
         services.AddKeyedSingleton<IMessageQueue>("outbound", (sp, _) =>
             new SqsMessageQueue(sp.GetRequiredService<IAmazonSQS>(), outboundUrl));
+
+        services.AddScoped<MessageDispatcher>();
+        services.AddScoped<OutboundQueueService>();
+
+        services.AddHostedService<QueueWorker>();
 
         return services;
     }

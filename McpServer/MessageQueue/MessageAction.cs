@@ -1,15 +1,12 @@
 ﻿namespace McpServer.MessageQueue;
 
-public enum MessageAction
+public static class InboundAction
 {
-    LlmRequest
+    public const string NewTicket = "new_ticket";
+    public const string UserMessage = "user_message";
 }
 
-public static class MessageActionExtensions
+public static class OutboundAction
 {
-    public static string ToValue(this MessageAction action) => action switch
-    {
-        MessageAction.LlmRequest => "llm_request",
-        _ => throw new ArgumentOutOfRangeException(nameof(action))
-    };
+    public const string LlmRequest = "llm_request";
 }
