@@ -20,9 +20,9 @@ var transporte = new StdioClientTransport(new StdioClientTransportOptions
 await using var mcp = await McpClient.CreateAsync(transporte);
 var todasLasTools = await mcp.ListToolsAsync();
 
-// Solo la tool de registrar incidente
+// Tools para crear tickets nuevos o consultar tickets existentes
 var toolsEntrada = todasLasTools
-    .Where(t => t.Name is "registrar_incidente")
+    .Where(t => t.Name is "registrar_incidente" or "obtener_ticket")
     .ToList();
 
 IChatClient agente = new OpenAIClient(
@@ -39,9 +39,19 @@ IChatClient agente = new OpenAIClient(
 
 var systemPrompt = new ChatMessage(ChatRole.System, """
     Sos el Agente de Entrada de un sistema de soporte técnico de e-commerce nivel 1.
-    Tu trabajo es hablar con el usuario, recolectar información del incidente y registrarlo.
+    Tu trabajo es recibir casos nuevos o tickets existentes, validar si falta información y dejarlos listos para derivar.
 
-    Para poder registrar el incidente necesitás obtener obligatoriamente:
+    Si el usuario menciona un ticket existente con formato INC seguido de números:
+    - Usá la tool obtener_ticket.
+    - Si el ticket existe, revisá si tiene descripción clara, sistema afectado y usuario/email.
+    - Si falta información, preguntá una sola cosa puntual por vez.
+    - Cuando el ticket tenga información suficiente, respondé exactamente con este formato:
+      DERIVAR_A_ENRUTADOR: INC1234
+      Motivo: [resumen breve del problema y datos disponibles]
+    - No intentes resolver ni diagnosticar.
+
+    Si el usuario no menciona un ticket existente, recolectá datos para registrar un incidente nuevo.
+    Para poder registrar un incidente nuevo necesitás obtener obligatoriamente:
     1. Descripción clara del problema
     2. Sistema afectado (usuarios, pedidos, pagos, catalogo, stock)
     3. Tipo de error (dato_incorrecto, operacion_bloqueada, inconsistencia, error_sistema)
@@ -51,8 +61,11 @@ var systemPrompt = new ChatMessage(ChatRole.System, """
     - Hablá en español, de forma amigable y clara.
     - Si falta información, preguntá puntualmente. Una pregunta a la vez.
     - Cuando tengas todos los datos, usá la tool registrar_incidente para crear el ticket.
-    - Una vez que uses la tool registrar_incidente, respondé al usuario con un mensaje claro como: "Tu incidente fue registrado con el ID: INC1234. Un agente lo procesará a la brevedad."
-    - No ejecutes acciones correctivas. Solo recolectá datos y registrá el incidente.
+    - Una vez que uses la tool registrar_incidente, respondé con:
+      Tu incidente fue registrado con el ID: INC1234.
+      DERIVAR_A_ENRUTADOR: INC1234
+      Motivo: [resumen breve del problema y datos disponibles]
+    - No ejecutes acciones correctivas. Solo recolectá datos, consultá o registrá el incidente y derivalo.
     """);
 
 var historial = new List<ChatMessage> { systemPrompt };
@@ -80,11 +93,10 @@ while (true)
         Console.WriteLine($"\n[Agente] {texto}\n");
         historial.Add(new(ChatRole.Assistant, texto));
 
-        // Si el agente registró el incidente, terminamos la sesión
-        if (texto.Contains("INC", StringComparison.OrdinalIgnoreCase) &&
-            texto.Contains("ticket", StringComparison.OrdinalIgnoreCase))
+        // Si el caso quedó listo para enrutamiento, terminamos la sesión
+        if (texto.Contains("DERIVAR_A_ENRUTADOR", StringComparison.OrdinalIgnoreCase))
         {
-            Console.WriteLine("[Sistema] Incidente registrado. Derivando al Agente Enrutador...");
+            Console.WriteLine("[Sistema] Caso listo para derivar al Agente Enrutador.");
             break;
         }
     }

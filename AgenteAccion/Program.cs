@@ -40,6 +40,10 @@ var toolsStock = todasLasTools
     .Where(t => t.Name is "sincronizar_stock" or "cerrar_ticket_stock")
     .ToList();
 
+var toolsEscalacion = todasLasTools
+    .Where(t => t.Name is "escalar_ticket")
+    .ToList();
+
 IChatClient CrearSubagente() =>
     new OpenAIClient(
         new ApiKeyCredential(API_KEY),
@@ -81,6 +85,13 @@ var systemStock = new ChatMessage(ChatRole.System, """
     Sos el Subagente especializado en problemas de stock de e-commerce.
     Tu único trabajo es sincronizar el stock del producto indicado, confirmar la sincronización y cerrar el ticket.
     No diagnostiques. Solo ejecutá.
+    """);
+
+var systemEscalacion = new ChatMessage(ChatRole.System, """
+    Sos el agente de escalación de soporte de e-commerce.
+    Tu único trabajo es escalar el ticket cuando no haya solución segura en la KB o cuando falten permisos/datos para resolver.
+    Usá la tool escalar_ticket y explicá brevemente el motivo.
+    No intentes resolver el caso.
     """);
 
 Console.WriteLine("=== Agente de Acción — E-Commerce Soporte N1 ===");
@@ -145,6 +156,16 @@ while (true)
                 new ChatOptions { Tools = [.. toolsStock] }
             );
             Console.WriteLine($"\n[SubagenteStock] {respuesta.Text}\n");
+        }
+        else if (diagnostico.Contains("Escalacion", StringComparison.OrdinalIgnoreCase) ||
+                 diagnostico.Contains("escalar", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("\n[AgenteAccion] Levantando subagente: ESCALACION");
+            var respuesta = await CrearSubagente().GetResponseAsync(
+                [systemEscalacion, new(ChatRole.User, diagnostico)],
+                new ChatOptions { Tools = [.. toolsEscalacion] }
+            );
+            Console.WriteLine($"\n[SubagenteEscalacion] {respuesta.Text}\n");
         }
         else
         {

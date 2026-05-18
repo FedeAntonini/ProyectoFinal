@@ -3,6 +3,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
+using System.Net.Http.Json;
+using System.Text.Json;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -26,7 +28,7 @@ await builder.Build().RunAsync();
 public static class ToolsEntrada
 {
     [McpServerTool, Description("Registra los datos del incidente cuando el agente tiene toda la información necesaria para derivar.")]
-    public static string RegistrarIncidente(
+    public static async Task<string> RegistrarIncidente(
         [Description("Descripción clara del problema reportado por el usuario")]
         string descripcion,
         [Description("Sistema afectado: usuarios, pedidos, pagos, catalogo, stock")]
@@ -36,8 +38,22 @@ public static class ToolsEntrada
         [Description("Email del usuario que reporta el incidente")]
         string usuario)
     {
-        var ticketId = $"INC{new Random().Next(1000, 9999)}";
-        return $"{{ \"ticketId\": \"{ticketId}\", \"descripcion\": \"{descripcion}\", \"sistema\": \"{sistema}\", \"tipoError\": \"{tipoError}\", \"usuario\": \"{usuario}\", \"estado\": \"Abierto\" }}";
+        var ticket = await AgentAiApi.CreateTicketFromAgentAsync(new CreateAgentTicketRequest(
+            descripcion,
+            sistema,
+            tipoError,
+            usuario));
+
+        return JsonSerializer.Serialize(new
+        {
+            ticketId = ticket.Number,
+            id = ticket.Id,
+            descripcion = ticket.Description,
+            sistema,
+            tipoError,
+            usuario = ticket.CreatedByEmail,
+            estado = ticket.StateLabel
+        }, AgentAiApi.JsonOptions);
     }
 }
 
@@ -49,23 +65,16 @@ public static class ToolsEntrada
 public static class ToolsEnrutador
 {
     [McpServerTool, Description("Obtiene los detalles de un ticket de soporte por su ID.")]
-    public static string ObtenerTicket(
+    public static async Task<string> ObtenerTicket(
         [Description("ID del ticket, por ejemplo: INC0001")]
         string ticketId)
     {
-        var tickets = new Dictionary<string, object>
-        {
-            ["INC0001"] = new { Usuario = "juan.perez@empresa.com", Problema = "No puedo iniciar sesión en la plataforma", Prioridad = "Alta", Sistema = "usuarios" },
-            ["INC0002"] = new { Usuario = "maria.gomez@empresa.com", Problema = "Mi pedido ORD-5521 figura como pendiente hace 3 días", Prioridad = "Media", Sistema = "pedidos" },
-            ["INC0003"] = new { Usuario = "carlos.ruiz@empresa.com", Problema = "Me rechazaron el pago con tarjeta pero el dinero fue debitado", Prioridad = "Alta", Sistema = "pagos" },
-            ["INC0004"] = new { Usuario = "laura.diaz@empresa.com", Problema = "El precio del producto SKU-8821 está mal cargado", Prioridad = "Media", Sistema = "catalogo" },
-            ["INC0005"] = new { Usuario = "admin@empresa.com", Problema = "El stock del producto SKU-3310 no se sincronizó", Prioridad = "Baja", Sistema = "stock" },
-        };
+        var ticket = await AgentAiApi.GetTicketByNumberAsync(ticketId);
 
-        if (tickets.TryGetValue(ticketId.ToUpper(), out var ticket))
-            return $"Ticket {ticketId}: {System.Text.Json.JsonSerializer.Serialize(ticket)}";
+        if (ticket is null)
+            return $"Ticket {ticketId} no encontrado.";
 
-        return $"Ticket {ticketId} no encontrado.";
+        return $"Ticket {ticket.Number}: {JsonSerializer.Serialize(ticket, AgentAiApi.JsonOptions)}";
     }
 
     [McpServerTool, Description("Analiza el problema del ticket y determina qué agente de acción debe resolverlo.")]
@@ -84,6 +93,35 @@ public static class ToolsEnrutador
             "stock"    => "{ \"agente\": \"AgenteAccionStock\", \"accion\": \"sincronizar_stock\", \"confianza\": \"alta\" }",
             _          => "{ \"agente\": \"Escalacion\", \"accion\": \"escalar_nivel2\", \"confianza\": \"baja\" }"
         };
+    }
+
+    [McpServerTool, Description("Busca en la base de conocimiento una solución aplicable para el problema y sistema del ticket.")]
+    public static async Task<string> BuscarKb(
+        [Description("Descripción del problema del ticket")]
+        string descripcion,
+        [Description("Sistema afectado: usuarios, pedidos, pagos, catalogo, stock")]
+        string sistema)
+    {
+        var resultado = await AgentAiApi.SearchKnowledgeBaseAsync(descripcion, sistema);
+        return JsonSerializer.Serialize(resultado, AgentAiApi.JsonOptions);
+    }
+}
+
+
+// ============================================================
+// TOOLS DE ESCALACION
+// ============================================================
+[McpServerToolType]
+public static class ToolsEscalacion
+{
+    [McpServerTool, Description("Escala un ticket a nivel 2 cuando no se puede resolver automaticamente con la KB.")]
+    public static async Task<string> EscalarTicket(
+        [Description("ID del ticket a escalar, por ejemplo: INC1234")]
+        string ticketId,
+        [Description("Motivo por el cual se escala el ticket")]
+        string motivo)
+    {
+        return await AgentAiApi.EscalateTicketAsync(ticketId, motivo);
     }
 }
 
@@ -113,13 +151,13 @@ public static class ToolsAccionPedido
     }
 
     [McpServerTool, Description("Cierra un ticket de pedido una vez resuelto.")]
-    public static string CerrarTicketPedido(
+    public static async Task<string> CerrarTicketPedido(
         [Description("ID del ticket a cerrar")]
         string ticketId,
         [Description("Descripción de la resolución")]
         string resolucion)
     {
-        return $"[PEDIDO] Ticket {ticketId} cerrado. Resolución: {resolucion}";
+        return await AgentAiApi.CloseTicketAsync(ticketId, resolucion, "PEDIDO");
     }
 }
 
@@ -139,13 +177,13 @@ public static class ToolsAccionAcceso
     }
 
     [McpServerTool, Description("Cierra un ticket de acceso una vez resuelto.")]
-    public static string CerrarTicketAcceso(
+    public static async Task<string> CerrarTicketAcceso(
         [Description("ID del ticket a cerrar")]
         string ticketId,
         [Description("Descripción de la resolución")]
         string resolucion)
     {
-        return $"[ACCESO] Ticket {ticketId} cerrado. Resolución: {resolucion}";
+        return await AgentAiApi.CloseTicketAsync(ticketId, resolucion, "ACCESO");
     }
 }
 
@@ -165,13 +203,13 @@ public static class ToolsAccionPago
     }
 
     [McpServerTool, Description("Cierra un ticket de pago una vez resuelto.")]
-    public static string CerrarTicketPago(
+    public static async Task<string> CerrarTicketPago(
         [Description("ID del ticket a cerrar")]
         string ticketId,
         [Description("Descripción de la resolución")]
         string resolucion)
     {
-        return $"[PAGO] Ticket {ticketId} cerrado. Resolución: {resolucion}";
+        return await AgentAiApi.CloseTicketAsync(ticketId, resolucion, "PAGO");
     }
 }
 
@@ -193,13 +231,13 @@ public static class ToolsAccionPrecio
     }
 
     [McpServerTool, Description("Cierra un ticket de precio una vez resuelto.")]
-    public static string CerrarTicketPrecio(
+    public static async Task<string> CerrarTicketPrecio(
         [Description("ID del ticket a cerrar")]
         string ticketId,
         [Description("Descripción de la resolución")]
         string resolucion)
     {
-        return $"[PRECIO] Ticket {ticketId} cerrado. Resolución: {resolucion}";
+        return await AgentAiApi.CloseTicketAsync(ticketId, resolucion, "PRECIO");
     }
 }
 
@@ -219,12 +257,197 @@ public static class ToolsAccionStock
     }
 
     [McpServerTool, Description("Cierra un ticket de stock una vez resuelto.")]
-    public static string CerrarTicketStock(
+    public static async Task<string> CerrarTicketStock(
         [Description("ID del ticket a cerrar")]
         string ticketId,
         [Description("Descripción de la resolución")]
         string resolucion)
     {
-        return $"[STOCK] Ticket {ticketId} cerrado. Resolución: {resolucion}";
+        return await AgentAiApi.CloseTicketAsync(ticketId, resolucion, "STOCK");
     }
 }
+
+public static class AgentAiApi
+{
+    public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    private static readonly HttpClient Http = new()
+    {
+        BaseAddress = new Uri(Environment.GetEnvironmentVariable("AGENTAI_API_URL") ?? "http://localhost:5038")
+    };
+
+    public static async Task<TicketResponse> CreateTicketFromAgentAsync(CreateAgentTicketRequest request)
+    {
+        using var response = await Http.PostAsJsonAsync("/tickets/from-agent", request, JsonOptions);
+        response.EnsureSuccessStatusCode();
+
+        return await response.Content.ReadFromJsonAsync<TicketResponse>(JsonOptions)
+            ?? throw new InvalidOperationException("La API no devolvió el ticket creado.");
+    }
+
+    public static async Task<TicketResponse?> GetTicketByNumberAsync(string number)
+    {
+        using var response = await Http.GetAsync($"/tickets/by-number/{Uri.EscapeDataString(number.ToUpperInvariant())}");
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            return null;
+
+        response.EnsureSuccessStatusCode();
+
+        return await response.Content.ReadFromJsonAsync<TicketResponse>(JsonOptions);
+    }
+
+    public static async Task<string> CloseTicketAsync(string ticketId, string resolution, string area)
+    {
+        var ticket = await GetTicketByNumberAsync(ticketId);
+
+        if (ticket is null)
+            return $"[{area}] Ticket {ticketId} no encontrado.";
+
+        var request = new UpdateTicketRequest(
+            Title: null,
+            Description: $"{ticket.Description}\n\nResolución: {resolution}",
+            State: 4,
+            StateLabel: "Resolved",
+            Priority: null,
+            PriorityLabel: null,
+            AssignedTo: null,
+            AssignmentGroup: null,
+            ResolvedAt: DateTime.UtcNow);
+
+        using var response = await Http.PutAsJsonAsync($"/tickets/{ticket.Id}", request, JsonOptions);
+        response.EnsureSuccessStatusCode();
+
+        return $"[{area}] Ticket {ticketId} cerrado. Resolución: {resolution}";
+    }
+
+    public static async Task<string> EscalateTicketAsync(string ticketId, string reason)
+    {
+        var ticket = await GetTicketByNumberAsync(ticketId);
+
+        if (ticket is null)
+            return $"[ESCALACION] Ticket {ticketId} no encontrado.";
+
+        var request = new UpdateTicketRequest(
+            Title: null,
+            Description: $"{ticket.Description}\n\nEscalación N2: {reason}",
+            State: 2,
+            StateLabel: "In Progress - Escalated",
+            Priority: ticket.Priority <= 2 ? ticket.Priority : 2,
+            PriorityLabel: ticket.Priority <= 2 ? ticket.PriorityLabel : "High",
+            AssignedTo: null,
+            AssignmentGroup: "Nivel 2",
+            ResolvedAt: null);
+
+        using var response = await Http.PutAsJsonAsync($"/tickets/{ticket.Id}", request, JsonOptions);
+        response.EnsureSuccessStatusCode();
+
+        return $"[ESCALACION] Ticket {ticketId} escalado a Nivel 2. Motivo: {reason}";
+    }
+
+    public static async Task<KbResult> SearchKnowledgeBaseAsync(string query, string system)
+    {
+        var url = $"/knowledge-base/search?query={Uri.EscapeDataString(query)}&system={Uri.EscapeDataString(system)}&limit=1";
+        using var response = await Http.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+
+        var results = await response.Content.ReadFromJsonAsync<List<KnowledgeBaseSearchResult>>(JsonOptions)
+            ?? [];
+
+        var article = results.FirstOrDefault();
+        if (article is null)
+        {
+            return new KbResult(
+                "KB-SIN_SOLUCION",
+                system,
+                "No hay artículo de KB aplicable con confianza suficiente.",
+                "baja",
+                "escalar_nivel2");
+        }
+
+        return new KbResult(
+            article.ArticleCode,
+            string.IsNullOrWhiteSpace(article.System) ? system : article.System,
+            article.RecommendedAction,
+            article.Confidence,
+            InferRecommendedAction(article));
+    }
+
+    private static string InferRecommendedAction(KnowledgeBaseSearchResult article)
+    {
+        var text = $"{article.Actions} {article.RecommendedAction} {article.Tags} {article.System} {article.Description}".ToLowerInvariant();
+
+        if (text.Contains("reset") || text.Contains("acceso") || text.Contains("login") || text.Contains("sesion"))
+            return "resetear_acceso";
+        if (text.Contains("pedido") || text.Contains("orden") || text.Contains("ord-"))
+            return "consultar_estado_pedido";
+        if (text.Contains("pago") || text.Contains("tarjeta") || text.Contains("debito") || text.Contains("reembolso"))
+            return "consultar_pago";
+        if (text.Contains("precio") || text.Contains("catalogo"))
+            return "corregir_precio";
+        if (text.Contains("stock") || text.Contains("inventario"))
+            return "sincronizar_stock";
+
+        return article.Confidence is "alta" or "media" ? "resolver_con_kb" : "escalar_nivel2";
+    }
+}
+
+public record CreateAgentTicketRequest(
+    string Description,
+    string System,
+    string ErrorType,
+    string UserEmail);
+
+public record UpdateTicketRequest(
+    string? Title,
+    string? Description,
+    int? State,
+    string? StateLabel,
+    int? Priority,
+    string? PriorityLabel,
+    string? AssignedTo,
+    string? AssignmentGroup,
+    DateTime? ResolvedAt);
+
+public record TicketResponse(
+    int Id,
+    string SysId,
+    string Number,
+    string Title,
+    string Description,
+    int State,
+    string StateLabel,
+    int Priority,
+    string PriorityLabel,
+    string CreatedByName,
+    string CreatedByEmail,
+    DateTime OpenedAt,
+    DateTime UpdatedAt,
+    DateTime? ResolvedAt,
+    DateTime LastSyncedAt);
+
+public record KbResult(
+    string ArticleId,
+    string System,
+    string Solution,
+    string Confidence,
+    string RecommendedAction);
+
+public record KnowledgeBaseSearchResult(
+    int ArticleId,
+    string ArticleCode,
+    string System,
+    string SystemType,
+    string Tags,
+    string Actions,
+    string Description,
+    string Symptoms,
+    string ProbableCause,
+    string RequiredData,
+    string Preconditions,
+    string RecommendedAction,
+    string Validation,
+    string ExpectedResult,
+    string EscalationCriteria,
+    string SuggestedUserMessage,
+    string Confidence);
