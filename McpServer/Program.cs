@@ -9,6 +9,7 @@ using McpServer.Services;
 using McpServer.Api;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.AI;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,6 +25,7 @@ builder.Services
 
 builder.Services.AddScoped<AgenteEntrada>();
 builder.Services.AddScoped<AgenteConversacion>();
+builder.Services.AddScoped<AgenteEnrutador>();
 builder.Services.AddLlmServices(builder.Configuration);
 builder.Services.AddApiServices(builder.Configuration);
 
@@ -66,6 +68,37 @@ app.MapGet("/debug/tools", () =>
     return Results.Json(tools);
 });
 
+// Endpoint de prueba 
+app.MapPost("/debug/enrutar/{ticketId}", async (
+    int ticketId,
+    ILlmService llm,
+    CancellationToken ct) =>
+{
+    // Obtener el ticket de las tools hardcodeadas
+    var ticket = ToolsEnrutador.ObtenerTicket($"INC{ticketId:D4}");
+
+    const string systemPrompt = """
+        Sos el Agente Enrutador de un sistema de soporte nivel 1 para un estudio de pilates.
+        
+        Analizá el problema y decidí cuál agente es el más adecuado:
+        - AgenteAccionReserva: problemas con reservas de turnos
+        - AgenteAccionAcceso: problemas de login o acceso
+        - AgenteAccionPago: problemas con cobros o pagos
+        - AgenteAccionNotificacion: no recibió confirmación de turno
+        - Escalacion: si no encaja en ninguno
+        
+        Respondé ÚNICAMENTE con JSON: {"agente": "NombreDelAgente", "motivo": "explicación breve"}
+        Sin backticks ni texto adicional.
+        """;
+
+    var response = await llm.CompleteAsync(
+        systemPrompt,
+        [new(ChatRole.User, $"Datos del ticket:\n{ticket}")],
+        ct);
+
+    return Results.Ok(new { ticketId, ticket, decision = response });
+});
+
 app.Run();
 
 // ============================================================
@@ -94,7 +127,8 @@ public static class ToolsEntrada
 // ============================================================
 // TOOLS DEL AGENTE ENRUTADOR
 // ============================================================
-[McpServerToolType]
+
+/*[McpServerToolType]
 public static class ToolsEnrutador
 {
     [McpServerTool, Description("Obtiene los detalles de un ticket de soporte por su ID.")]
@@ -133,6 +167,30 @@ public static class ToolsEnrutador
             "stock"    => "{ \"agente\": \"AgenteAccionStock\", \"accion\": \"sincronizar_stock\", \"confianza\": \"alta\" }",
             _          => "{ \"agente\": \"Escalacion\", \"accion\": \"escalar_nivel2\", \"confianza\": \"baja\" }"
         };
+    }
+}*/
+
+[McpServerToolType]
+public static class ToolsEnrutador
+{
+    [McpServerTool, Description("Obtiene los detalles de un ticket de soporte por su ID.")]
+    public static string ObtenerTicket(
+        [Description("ID del ticket, por ejemplo: INC0001")]
+        string ticketId)
+    {
+        var tickets = new Dictionary<string, object>
+        {
+            ["INC0001"] = new { Usuario = "ana.garcia@mail.com", Problema = "No puedo iniciar sesión en la app del estudio", Prioridad = "Alta", Sistema = "acceso" },
+            ["INC0002"] = new { Usuario = "lucas.perez@mail.com", Problema = "Reservé un turno para el martes a las 9am pero no me aparece en mi calendario", Prioridad = "Media", Sistema = "reserva" },
+            ["INC0003"] = new { Usuario = "sofia.ruiz@mail.com", Problema = "Me cobraron dos veces la clase del jueves", Prioridad = "Alta", Sistema = "pago" },
+            ["INC0004"] = new { Usuario = "martin.lopez@mail.com", Problema = "Quiero cancelar mi turno del viernes pero el botón no funciona", Prioridad = "Media", Sistema = "reserva" },
+            ["INC0005"] = new { Usuario = "paula.diaz@mail.com", Problema = "Reservé turno pero no recibí ningún mail de confirmación", Prioridad = "Baja", Sistema = "notificacion" },
+        };
+
+        if (tickets.TryGetValue(ticketId.ToUpper(), out var ticket))
+            return $"Ticket {ticketId}: {System.Text.Json.JsonSerializer.Serialize(ticket)}";
+
+        return $"Ticket {ticketId} no encontrado.";
     }
 }
 
