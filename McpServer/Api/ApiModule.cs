@@ -4,6 +4,7 @@ using McpServer.Api.Auth;
 using McpServer.Api.Conversations;
 using McpServer.Api.Messages;
 using McpServer.Api.Tickets;
+using McpServer.Services;
 
 namespace McpServer.Api;
 
@@ -33,6 +34,8 @@ public static class ApiModule
                 .AddHttpMessageHandler<AuthHandler>();
 
         services.AddHttpClient<IAuthService, AuthService>(c => c.BaseAddress = new Uri(baseUrl));
+
+        services.AddHttpClient<IKnowledgeBaseApiService, KnowledgeBaseApiService>(c => c.BaseAddress = new Uri(baseUrl));
 
         return services;
     }

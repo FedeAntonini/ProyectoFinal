@@ -117,23 +117,6 @@ public static class ToolsEnrutador
         return $"Ticket {ticketId} no encontrado.";
     }
 
-    [McpServerTool, Description("Analiza el problema del ticket y determina qué agente de acción debe resolverlo.")]
-    public static string DiagnosticarProblema(
-        [Description("Descripción del problema")]
-        string descripcion,
-        [Description("Sistema afectado: usuarios, pedidos, pagos, catalogo, stock")]
-        string sistema)
-    {
-        return (sistema.ToLower()) switch
-        {
-            "usuarios" => "{ \"agente\": \"AgenteAccionAcceso\", \"accion\": \"resetear_acceso\", \"confianza\": \"alta\" }",
-            "pedidos"  => "{ \"agente\": \"AgenteAccionPedido\", \"accion\": \"consultar_estado_pedido\", \"confianza\": \"alta\" }",
-            "pagos"    => "{ \"agente\": \"AgenteAccionPago\", \"accion\": \"consultar_pago\", \"confianza\": \"alta\" }",
-            "catalogo" or "precio" => "{ \"agente\": \"AgenteAccionPrecio\", \"accion\": \"corregir_precio\", \"confianza\": \"alta\" }",
-            "stock"    => "{ \"agente\": \"AgenteAccionStock\", \"accion\": \"sincronizar_stock\", \"confianza\": \"alta\" }",
-            _          => "{ \"agente\": \"Escalacion\", \"accion\": \"escalar_nivel2\", \"confianza\": \"baja\" }"
-        };
-    }
 }
 
 
@@ -275,5 +258,77 @@ public static class ToolsAccionStock
         string resolucion)
     {
         return $"[STOCK] Ticket {ticketId} cerrado. Resolución: {resolucion}";
+    }
+}
+
+
+// ============================================================
+// TOOLS DE KNOWLEDGE BASE — consulta a la API
+// ============================================================
+[McpServerToolType]
+public class ToolsKnowledgeBase(IKnowledgeBaseApiService kbApi)
+{
+    [McpServerTool, Description("Analiza el problema del ticket consultando la base de conocimiento y determina si el bot puede resolverlo o si hay que escalar a nivel 2. Retorna decision (continuar/pedir_mas_info/escalar), mensaje sugerido y criterios de escalación.")]
+    public async Task<string> DiagnosticarProblema(
+        [Description("Descripción del problema reportado por el usuario")]
+        string descripcion,
+        [Description("Sistema afectado (ej: usuarios, pedidos, pagos, catalogo, stock)")]
+        string sistema)
+    {
+        var resultado = await kbApi.DiagnosticarAsync(sistema, descripcion);
+
+        if (resultado == null)
+            return System.Text.Json.JsonSerializer.Serialize(new
+            {
+                puedoResolver = false,
+                decision = "escalar",
+                confianza = "ninguna",
+                mensajeSugerido = "No pude consultar la base de conocimiento. Se recomienda escalar a soporte de nivel 2."
+            });
+
+        return System.Text.Json.JsonSerializer.Serialize(new
+        {
+            puedoResolver       = resultado.PuedoResolver,
+            decision            = resultado.Decision,
+            confianza           = resultado.Confianza,
+            mensajeSugerido     = resultado.MensajeSugerido,
+            criteriosEscalacion = resultado.CriteriosEscalacion,
+            accionesRecomendadas = resultado.AccionesRecomendadas,
+            articuloId          = resultado.ArticleId,
+            articuloCodigo      = resultado.ArticleCode
+        });
+    }
+
+    [McpServerTool, Description("Consulta la base de conocimiento para obtener síntomas, causa probable, acción recomendada y criterios de escalación del artículo más relevante.")]
+    public async Task<string> ConsultarKB(
+        [Description("Descripción del problema a buscar en la KB")]
+        string descripcion,
+        [Description("Sistema afectado (ej: usuarios, pedidos, pagos, catalogo, stock)")]
+        string sistema)
+    {
+        var articulos = await kbApi.SearchAsync(descripcion, sistema);
+
+        if (articulos.Count == 0)
+            return System.Text.Json.JsonSerializer.Serialize(new
+            {
+                encontrado = false,
+                mensaje = "No se encontró un artículo en la KB para este problema. Se recomienda escalar a nivel 2."
+            });
+
+        var top = articulos[0];
+        return System.Text.Json.JsonSerializer.Serialize(new
+        {
+            encontrado          = true,
+            articuloId          = top.ArticleId,
+            articuloCodigo      = top.ArticleCode,
+            descripcion         = top.Description,
+            sintomas            = top.Symptoms,
+            causaProbable       = top.ProbableCause,
+            accionRecomendada   = top.RecommendedAction,
+            datosRequeridos     = top.RequiredData,
+            criteriosEscalacion = top.EscalationCriteria,
+            mensajeSugerido     = top.SuggestedUserMessage,
+            confianza           = top.Confidence
+        });
     }
 }

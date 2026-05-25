@@ -8,12 +8,13 @@ var API_KEY = Environment.GetEnvironmentVariable("GROQ_API_KEY")
     ?? throw new Exception("Falta la variable de entorno GROQ_API_KEY");
 const string MODELO = "llama-3.3-70b-versatile";
 
-Console.WriteLine("Conectando al MCP Server...");
+var mcpUrl = Environment.GetEnvironmentVariable("MCP_SERVER_URL") ?? "http://localhost:61559";
 
-var transporte = new StdioClientTransport(new StdioClientTransportOptions
+Console.WriteLine($"Conectando al MCP Server en {mcpUrl}...");
+
+var transporte = new HttpClientTransport(new HttpClientTransportOptions
 {
-    Command = "dotnet",
-    Arguments = ["run", "--project", "../McpServer"],
+    Endpoint = new Uri($"{mcpUrl}/mcp"),
     Name = "SoporteMcpServer",
 });
 
@@ -21,7 +22,7 @@ await using var mcp = await McpClient.CreateAsync(transporte);
 var todasLasTools = await mcp.ListToolsAsync();
 
 var toolsEnrutador = todasLasTools
-    .Where(t => t.Name is "obtener_ticket")
+    .Where(t => t.Name is "obtener_ticket" or "diagnosticar_problema")
     .ToList();
 
 IChatClient agente = new OpenAIClient(
@@ -38,19 +39,26 @@ IChatClient agente = new OpenAIClient(
 
 var systemPrompt = new ChatMessage(ChatRole.System, """
     Sos el Agente Enrutador de soporte de e-commerce nivel 1.
-    
-    Cuando recibas un ID de ticket:
-    1. Llamá a la tool obtener_ticket para obtener los datos
+
+    Cuando recibas un ID de ticket seguí estos pasos en orden:
+    1. Llamá a la tool obtener_ticket para obtener los datos del ticket.
     2. Si el ticket no existe, respondé: TICKET_NO_ENCONTRADO: No se encontró un ticket con ese ID.
-    3. Si el ticket existe, analizá el problema y el sistema afectado y decidí cuál de estos agentes es el más adecuado para resolverlo:
-       - AgenteAccionAcceso: problemas de login, autenticación o acceso de usuarios
-       - AgenteAccionPedido: problemas con el estado o seguimiento de pedidos
-       - AgenteAccionPago: problemas con pagos, cobros o transacciones
-       - AgenteAccionPrecio: problemas con precios incorrectos en el catálogo
-       - AgenteAccionStock: problemas con inventario o sincronización de stock
-       - Escalacion: si el problema no encaja en ninguno de los anteriores
-    4. Respondé ÚNICAMENTE con: DELEGAR_A: [nombre del agente elegido]
-    
+    3. Si el ticket existe, llamá a la tool diagnosticar_problema pasando el sistema y la descripción del problema.
+    4. Usá el resultado del diagnóstico para decidir a qué agente derivar:
+       - Si el campo "decision" es "escalar" → elegí Escalacion.
+       - Si el campo "decision" es "continuar" o "pedir_mas_info", elegí el agente según el sistema afectado:
+           * usuarios → AgenteAccionAcceso
+           * pedidos  → AgenteAccionPedido
+           * pagos    → AgenteAccionPago
+           * catalogo o precio → AgenteAccionPrecio
+           * stock    → AgenteAccionStock
+           * cualquier otro → Escalacion
+    5. Respondé ÚNICAMENTE con este formato:
+       DELEGAR_A: [nombre del agente]
+       DECISION_KB: [valor del campo decision del diagnóstico]
+       CONFIANZA_KB: [valor del campo confianza del diagnóstico]
+       MENSAJE_SUGERIDO: [valor del campo mensajeSugerido del diagnóstico]
+
     No incluyas tags XML ni HTML. No agregues texto adicional.
     """);
 
