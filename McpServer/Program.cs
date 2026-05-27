@@ -38,6 +38,14 @@ if (!builder.Environment.IsDevelopment())
     builder.Services.AddMessageQueues(builder.Configuration);
     builder.Services.AddHostedService<QueueWorker>();
 }
+else
+{
+    // Dev: colas no-op para que OutboundMessageTools se pueda instanciar sin SQS
+    builder.Services.AddKeyedSingleton<IMessageQueue>("inbound",  (_, _) => new NoOpMessageQueue());
+    builder.Services.AddKeyedSingleton<IMessageQueue>("outbound", (_, _) => new NoOpMessageQueue());
+    builder.Services.AddScoped<OutboundQueueService>();
+    builder.Services.AddScoped<MessageDispatcher>();
+}
 
 
 var app = builder.Build();
