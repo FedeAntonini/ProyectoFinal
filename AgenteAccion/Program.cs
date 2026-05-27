@@ -21,24 +21,24 @@ var transporte = new HttpClientTransport(new HttpClientTransportOptions
 await using var mcp = await McpClient.CreateAsync(transporte);
 var todasLasTools = await mcp.ListToolsAsync();
 
-var toolsPedido = todasLasTools
-    .Where(t => t.Name is "consultar_estado_pedido" or "cerrar_ticket_pedido")
+var toolsSocio = todasLasTools
+    .Where(t => t.Name is "resetear_acceso_socio" or "cerrar_ticket_socio")
     .ToList();
 
-var toolsAcceso = todasLasTools
-    .Where(t => t.Name is "resetear_acceso" or "cerrar_ticket_acceso")
+var toolsTurno = todasLasTools
+    .Where(t => t.Name is "consultar_turno" or "cerrar_ticket_turno")
     .ToList();
 
 var toolsPago = todasLasTools
-    .Where(t => t.Name is "consultar_pago" or "cerrar_ticket_pago")
+    .Where(t => t.Name is "consultar_cuota" or "cerrar_ticket_pago")
     .ToList();
 
-var toolsPrecio = todasLasTools
-    .Where(t => t.Name is "corregir_precio" or "cerrar_ticket_precio")
+var toolsClase = todasLasTools
+    .Where(t => t.Name is "habilitar_clase" or "cerrar_ticket_clase")
     .ToList();
 
-var toolsStock = todasLasTools
-    .Where(t => t.Name is "sincronizar_stock" or "cerrar_ticket_stock")
+var toolsInstructor = todasLasTools
+    .Where(t => t.Name is "asignar_instructor" or "cerrar_ticket_instructor")
     .ToList();
 
 IChatClient CrearSubagente() =>
@@ -54,33 +54,33 @@ IChatClient CrearSubagente() =>
     .UseFunctionInvocation()
     .Build();
 
-var systemPedido = new ChatMessage(ChatRole.System, """
-    Sos el Subagente especializado en problemas de pedidos de la turnera de pilates.
-    Tu único trabajo es consultar el estado del pedido mencionado, informar al usuario y cerrar el ticket.
+var systemSocio = new ChatMessage(ChatRole.System, """
+    Sos el Subagente especializado en problemas de acceso de socios de la turnera de pilates.
+    Tu único trabajo es resetear el acceso del socio mencionado en el diagnóstico, informarle que recibió un link de recuperación y cerrar el ticket.
     No diagnostiques. Solo ejecutá.
     """);
 
-var systemAcceso = new ChatMessage(ChatRole.System, """
-    Sos el Subagente especializado en problemas de acceso de la turnera de pilates.
-    Tu único trabajo es resetear el acceso del usuario, informarle que recibió un link de recuperación y cerrar el ticket.
+var systemTurno = new ChatMessage(ChatRole.System, """
+    Sos el Subagente especializado en problemas de turnos de la turnera de pilates.
+    Tu único trabajo es consultar y reprogramar el turno del socio mencionado en el diagnóstico, informar el resultado y cerrar el ticket.
     No diagnostiques. Solo ejecutá.
     """);
 
 var systemPago = new ChatMessage(ChatRole.System, """
     Sos el Subagente especializado en problemas de pagos de la turnera de pilates.
-    Tu único trabajo es consultar el estado del pago del usuario, informarle el resultado y cerrar el ticket.
+    Tu único trabajo es verificar el cobro del socio mencionado en el diagnóstico, informar el resultado y cerrar el ticket.
     No diagnostiques. Solo ejecutá.
     """);
 
-var systemPrecio = new ChatMessage(ChatRole.System, """
-    Sos el Subagente especializado en problemas de precios del catálogo de la turnera de pilates.
-    Tu único trabajo es corregir el precio del producto indicado, confirmar la actualización y cerrar el ticket.
+var systemClase = new ChatMessage(ChatRole.System, """
+    Sos el Subagente especializado en problemas de clases de la turnera de pilates.
+    Tu único trabajo es habilitar la clase que figura incorrectamente como no disponible, confirmar la habilitación y cerrar el ticket.
     No diagnostiques. Solo ejecutá.
     """);
 
-var systemStock = new ChatMessage(ChatRole.System, """
-    Sos el Subagente especializado en problemas de stock de la turnera de pilates.
-    Tu único trabajo es sincronizar el stock del producto indicado, confirmar la sincronización y cerrar el ticket.
+var systemInstructor = new ChatMessage(ChatRole.System, """
+    Sos el Subagente especializado en problemas de instructores de la turnera de pilates.
+    Tu único trabajo es asignar un instructor disponible a la clase indicada en el diagnóstico, confirmar la asignación y cerrar el ticket.
     No diagnostiques. Solo ejecutá.
     """);
 
@@ -96,28 +96,28 @@ while (true)
 
     try
     {
-        if (diagnostico.Contains("AgenteAccionPedido", StringComparison.OrdinalIgnoreCase) ||
-            diagnostico.Contains("pedido", StringComparison.OrdinalIgnoreCase))
+        if (diagnostico.Contains("AgenteAccionSocio", StringComparison.OrdinalIgnoreCase) ||
+            diagnostico.Contains("socios", StringComparison.OrdinalIgnoreCase))
         {
-            Console.WriteLine("\n[AgenteAccion] Levantando subagente: PEDIDO");
+            Console.WriteLine("\n[AgenteAccion] Levantando subagente: SOCIO");
             var respuesta = await CrearSubagente().GetResponseAsync(
-                [systemPedido, new(ChatRole.User, diagnostico)],
-                new ChatOptions { Tools = [.. toolsPedido] }
+                [systemSocio, new(ChatRole.User, diagnostico)],
+                new ChatOptions { Tools = [.. toolsSocio] }
             );
-            Console.WriteLine($"\n[SubagentePedido] {respuesta.Text}\n");
+            Console.WriteLine($"\n[SubagenteSocio] {respuesta.Text}\n");
         }
-        else if (diagnostico.Contains("AgenteAccionAcceso", StringComparison.OrdinalIgnoreCase) ||
-                 diagnostico.Contains("acceso", StringComparison.OrdinalIgnoreCase))
+        else if (diagnostico.Contains("AgenteAccionTurno", StringComparison.OrdinalIgnoreCase) ||
+                 diagnostico.Contains("turnos", StringComparison.OrdinalIgnoreCase))
         {
-            Console.WriteLine("\n[AgenteAccion] Levantando subagente: ACCESO");
+            Console.WriteLine("\n[AgenteAccion] Levantando subagente: TURNO");
             var respuesta = await CrearSubagente().GetResponseAsync(
-                [systemAcceso, new(ChatRole.User, diagnostico)],
-                new ChatOptions { Tools = [.. toolsAcceso] }
+                [systemTurno, new(ChatRole.User, diagnostico)],
+                new ChatOptions { Tools = [.. toolsTurno] }
             );
-            Console.WriteLine($"\n[SubagenteAcceso] {respuesta.Text}\n");
+            Console.WriteLine($"\n[SubagenteTurno] {respuesta.Text}\n");
         }
         else if (diagnostico.Contains("AgenteAccionPago", StringComparison.OrdinalIgnoreCase) ||
-                 diagnostico.Contains("pago", StringComparison.OrdinalIgnoreCase))
+                 diagnostico.Contains("pagos", StringComparison.OrdinalIgnoreCase))
         {
             Console.WriteLine("\n[AgenteAccion] Levantando subagente: PAGO");
             var respuesta = await CrearSubagente().GetResponseAsync(
@@ -126,30 +126,29 @@ while (true)
             );
             Console.WriteLine($"\n[SubagentePago] {respuesta.Text}\n");
         }
-        else if (diagnostico.Contains("AgenteAccionPrecio", StringComparison.OrdinalIgnoreCase) ||
-                 diagnostico.Contains("precio", StringComparison.OrdinalIgnoreCase) ||
-                 diagnostico.Contains("catalogo", StringComparison.OrdinalIgnoreCase))
+        else if (diagnostico.Contains("AgenteAccionClase", StringComparison.OrdinalIgnoreCase) ||
+                 diagnostico.Contains("clases", StringComparison.OrdinalIgnoreCase))
         {
-            Console.WriteLine("\n[AgenteAccion] Levantando subagente: PRECIO");
+            Console.WriteLine("\n[AgenteAccion] Levantando subagente: CLASE");
             var respuesta = await CrearSubagente().GetResponseAsync(
-                [systemPrecio, new(ChatRole.User, diagnostico)],
-                new ChatOptions { Tools = [.. toolsPrecio] }
+                [systemClase, new(ChatRole.User, diagnostico)],
+                new ChatOptions { Tools = [.. toolsClase] }
             );
-            Console.WriteLine($"\n[SubagentePrecio] {respuesta.Text}\n");
+            Console.WriteLine($"\n[SubagenteClase] {respuesta.Text}\n");
         }
-        else if (diagnostico.Contains("AgenteAccionStock", StringComparison.OrdinalIgnoreCase) ||
-                 diagnostico.Contains("stock", StringComparison.OrdinalIgnoreCase))
+        else if (diagnostico.Contains("AgenteAccionInstructor", StringComparison.OrdinalIgnoreCase) ||
+                 diagnostico.Contains("instructores", StringComparison.OrdinalIgnoreCase))
         {
-            Console.WriteLine("\n[AgenteAccion] Levantando subagente: STOCK");
+            Console.WriteLine("\n[AgenteAccion] Levantando subagente: INSTRUCTOR");
             var respuesta = await CrearSubagente().GetResponseAsync(
-                [systemStock, new(ChatRole.User, diagnostico)],
-                new ChatOptions { Tools = [.. toolsStock] }
+                [systemInstructor, new(ChatRole.User, diagnostico)],
+                new ChatOptions { Tools = [.. toolsInstructor] }
             );
-            Console.WriteLine($"\n[SubagenteStock] {respuesta.Text}\n");
+            Console.WriteLine($"\n[SubagenteInstructor] {respuesta.Text}\n");
         }
         else
         {
-            Console.WriteLine("\n[AgenteAccion] No se encontró subagente. Escalando a nivel 2.\n");
+            Console.WriteLine("\n[AgenteAccion] No se encontró subagente para el sistema indicado. Escalando a nivel 2.\n");
         }
     }
     catch (Exception ex)
