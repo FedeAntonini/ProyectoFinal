@@ -54,36 +54,36 @@ IChatClient CrearSubagente() =>
     .Build();
 
 var systemPedido = new ChatMessage(ChatRole.System, """
-    Sos el Subagente especializado en problemas de pedidos de e-commerce.
+    Sos el Subagente especializado en problemas de pedidos de la turnera de pilates.
     Tu único trabajo es consultar el estado del pedido mencionado, informar al usuario y cerrar el ticket.
     No diagnostiques. Solo ejecutá.
     """);
 
 var systemAcceso = new ChatMessage(ChatRole.System, """
-    Sos el Subagente especializado en problemas de acceso de e-commerce.
+    Sos el Subagente especializado en problemas de acceso de la turnera de pilates.
     Tu único trabajo es resetear el acceso del usuario, informarle que recibió un link de recuperación y cerrar el ticket.
     No diagnostiques. Solo ejecutá.
     """);
 
 var systemPago = new ChatMessage(ChatRole.System, """
-    Sos el Subagente especializado en problemas de pagos de e-commerce.
+    Sos el Subagente especializado en problemas de pagos de la turnera de pilates.
     Tu único trabajo es consultar el estado del pago del usuario, informarle el resultado y cerrar el ticket.
     No diagnostiques. Solo ejecutá.
     """);
 
 var systemPrecio = new ChatMessage(ChatRole.System, """
-    Sos el Subagente especializado en problemas de precios del catálogo de e-commerce.
+    Sos el Subagente especializado en problemas de precios del catálogo de la turnera de pilates.
     Tu único trabajo es corregir el precio del producto indicado, confirmar la actualización y cerrar el ticket.
     No diagnostiques. Solo ejecutá.
     """);
 
 var systemStock = new ChatMessage(ChatRole.System, """
-    Sos el Subagente especializado en problemas de stock de e-commerce.
+    Sos el Subagente especializado en problemas de stock de la turnera de pilates.
     Tu único trabajo es sincronizar el stock del producto indicado, confirmar la sincronización y cerrar el ticket.
     No diagnostiques. Solo ejecutá.
     """);
 
-Console.WriteLine("=== Agente de Acción — E-Commerce Soporte N1 ===");
+Console.WriteLine("=== Agente de Acción — Turnera de Pilates Soporte N1 ===");
 Console.WriteLine("Pegá el diagnóstico del Enrutador (o 'salir' para terminar):");
 Console.WriteLine();
 

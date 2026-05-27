@@ -76,13 +76,13 @@ public static class ToolsEntrada
 {
     [McpServerTool, Description("Registra los datos del incidente cuando el agente tiene toda la información necesaria para derivar.")]
     public static string RegistrarIncidente(
-        [Description("Descripción clara del problema reportado por el usuario")]
+        [Description("Descripción clara del problema reportado por el socio")]
         string descripcion,
-        [Description("Sistema afectado: usuarios, pedidos, pagos, catalogo, stock")]
+        [Description("Sistema afectado: socios, turnos, pagos, clases, instructores")]
         string sistema,
         [Description("Tipo de error: dato_incorrecto, operacion_bloqueada, inconsistencia, error_sistema")]
         string tipoError,
-        [Description("Email del usuario que reporta el incidente")]
+        [Description("Email del socio que reporta el incidente")]
         string usuario)
     {
         var ticketId = $"INC{new Random().Next(1000, 9999)}";
@@ -97,18 +97,18 @@ public static class ToolsEntrada
 [McpServerToolType]
 public static class ToolsEnrutador
 {
-    [McpServerTool, Description("Obtiene los detalles de un ticket de soporte por su ID.")]
+    [McpServerTool, Description("Obtiene los detalles de un ticket de soporte de la turnera de pilates por su ID.")]
     public static string ObtenerTicket(
         [Description("ID del ticket, por ejemplo: INC0001")]
         string ticketId)
     {
         var tickets = new Dictionary<string, object>
         {
-            ["INC0001"] = new { Usuario = "juan.perez@empresa.com", Problema = "No puedo iniciar sesión en la plataforma", Prioridad = "Alta", Sistema = "usuarios" },
-            ["INC0002"] = new { Usuario = "maria.gomez@empresa.com", Problema = "Mi pedido ORD-5521 figura como pendiente hace 3 días", Prioridad = "Media", Sistema = "pedidos" },
-            ["INC0003"] = new { Usuario = "carlos.ruiz@empresa.com", Problema = "Me rechazaron el pago con tarjeta pero el dinero fue debitado", Prioridad = "Alta", Sistema = "pagos" },
-            ["INC0004"] = new { Usuario = "laura.diaz@empresa.com", Problema = "El precio del producto SKU-8821 está mal cargado", Prioridad = "Media", Sistema = "catalogo" },
-            ["INC0005"] = new { Usuario = "admin@empresa.com", Problema = "El stock del producto SKU-3310 no se sincronizó", Prioridad = "Baja", Sistema = "stock" },
+            ["INC0001"] = new { Usuario = "ana.garcia@gmail.com", Problema = "No puedo iniciar sesion en la app de la turnera", Prioridad = "Alta", Sistema = "socios" },
+            ["INC0002"] = new { Usuario = "carlos.lopez@gmail.com", Problema = "Hice una reserva y no aparece en el sistema", Prioridad = "Media", Sistema = "turnos" },
+            ["INC0003"] = new { Usuario = "maria.fernandez@gmail.com", Problema = "Pague un paquete de clases y no se acreditaron los creditos", Prioridad = "Alta", Sistema = "pagos" },
+            ["INC0004"] = new { Usuario = "roberto.sanchez@gmail.com", Problema = "El turno esta completo pero deberia haber lugares disponibles", Prioridad = "Media", Sistema = "clases" },
+            ["INC0005"] = new { Usuario = "laura.torres@gmail.com", Problema = "El profesor de mi reserva es diferente al que elegi", Prioridad = "Media", Sistema = "instructores" },
         };
 
         if (tickets.TryGetValue(ticketId.ToUpper(), out var ticket))
@@ -116,148 +116,135 @@ public static class ToolsEnrutador
 
         return $"Ticket {ticketId} no encontrado.";
     }
-
 }
 
 
 // ============================================================
-// TOOLS DEL AGENTE DE ACCIÓN — PEDIDO
+// TOOLS DEL AGENTE DE ACCIÓN — SOCIOS
 // ============================================================
 [McpServerToolType]
-public static class ToolsAccionPedido
+public static class ToolsAccionSocio
 {
-    [McpServerTool, Description("Consulta el estado actual de un pedido por su ID.")]
-    public static string ConsultarEstadoPedido(
-        [Description("ID del pedido, por ejemplo: ORD-5521")]
-        string pedidoId)
+    [McpServerTool, Description("Resetea el acceso de un socio que no puede ingresar a la app de la turnera.")]
+    public static string ResetearAccesoSocio(
+        [Description("Email del socio con problema de acceso")]
+        string email)
     {
-        var pedidos = new Dictionary<string, object>
-        {
-            ["ORD-5521"] = new { Estado = "En preparación", FechaEstimada = "2026-05-10", Ubicacion = "Depósito central" },
-            ["ORD-8834"] = new { Estado = "Enviado", FechaEstimada = "2026-05-08", Ubicacion = "En tránsito - correo argentino" },
-            ["ORD-1122"] = new { Estado = "Entregado", FechaEstimada = "2026-05-05", Ubicacion = "Entregado al destinatario" },
-        };
-
-        if (pedidos.TryGetValue(pedidoId.ToUpper(), out var pedido))
-            return $"Pedido {pedidoId}: {System.Text.Json.JsonSerializer.Serialize(pedido)}";
-
-        return $"Pedido {pedidoId} no encontrado.";
+        return $"[SOCIOS] Acceso reseteado para {email}. Se envió un link de recuperación al email registrado.";
     }
 
-    [McpServerTool, Description("Cierra un ticket de pedido una vez resuelto.")]
-    public static string CerrarTicketPedido(
+    [McpServerTool, Description("Cierra un ticket de socios una vez resuelto.")]
+    public static string CerrarTicketSocio(
         [Description("ID del ticket a cerrar")]
         string ticketId,
         [Description("Descripción de la resolución")]
         string resolucion)
     {
-        return $"[PEDIDO] Ticket {ticketId} cerrado. Resolución: {resolucion}";
+        return $"[SOCIOS] Ticket {ticketId} cerrado. Resolución: {resolucion}";
     }
 }
 
 
 // ============================================================
-// TOOLS DEL AGENTE DE ACCIÓN — ACCESO
+// TOOLS DEL AGENTE DE ACCIÓN — TURNOS
 // ============================================================
 [McpServerToolType]
-public static class ToolsAccionAcceso
+public static class ToolsAccionTurno
 {
-    [McpServerTool, Description("Resetea el acceso de un usuario que no puede iniciar sesión.")]
-    public static string ResetearAcceso(
-        [Description("Email del usuario con problema de acceso")]
-        string usuario)
+    [McpServerTool, Description("Consulta el estado de un turno y reprograma si fue cancelado incorrectamente.")]
+    public static string ConsultarTurno(
+        [Description("Email del socio con problema de turno")]
+        string email)
     {
-        return $"[ACCESO] Acceso reseteado para {usuario}. Se envió un link de recuperación al email registrado.";
+        return $"[TURNOS] Se verificó el turno de {email}. El turno fue reprogramado para el mismo horario de la semana siguiente y se notificó al socio por email.";
     }
 
-    [McpServerTool, Description("Cierra un ticket de acceso una vez resuelto.")]
-    public static string CerrarTicketAcceso(
+    [McpServerTool, Description("Cierra un ticket de turnos una vez resuelto.")]
+    public static string CerrarTicketTurno(
         [Description("ID del ticket a cerrar")]
         string ticketId,
         [Description("Descripción de la resolución")]
         string resolucion)
     {
-        return $"[ACCESO] Ticket {ticketId} cerrado. Resolución: {resolucion}";
+        return $"[TURNOS] Ticket {ticketId} cerrado. Resolución: {resolucion}";
     }
 }
 
 
 // ============================================================
-// TOOLS DEL AGENTE DE ACCIÓN — PAGO
+// TOOLS DEL AGENTE DE ACCIÓN — PAGOS
 // ============================================================
 [McpServerToolType]
 public static class ToolsAccionPago
 {
-    [McpServerTool, Description("Consulta el estado de un pago rechazado y verifica si el débito fue aplicado.")]
-    public static string ConsultarPago(
-        [Description("Email del usuario con problema de pago")]
-        string usuario)
+    [McpServerTool, Description("Verifica el estado de la cuota de un socio y gestiona devoluciones por cobros duplicados.")]
+    public static string ConsultarCuota(
+        [Description("Email del socio con problema de pago")]
+        string email)
     {
-        return $"[PAGO] Consultando pago para {usuario}. Se detectó un débito pendiente de reversión. El área de pagos fue notificada para procesar el reembolso en 48hs hábiles.";
+        return $"[PAGOS] Se verificó el cobro de {email}. Se detectó un cobro duplicado de la cuota mensual. El área de administración fue notificada para procesar la devolución en 48hs hábiles.";
     }
 
-    [McpServerTool, Description("Cierra un ticket de pago una vez resuelto.")]
+    [McpServerTool, Description("Cierra un ticket de pagos una vez resuelto.")]
     public static string CerrarTicketPago(
         [Description("ID del ticket a cerrar")]
         string ticketId,
         [Description("Descripción de la resolución")]
         string resolucion)
     {
-        return $"[PAGO] Ticket {ticketId} cerrado. Resolución: {resolucion}";
+        return $"[PAGOS] Ticket {ticketId} cerrado. Resolución: {resolucion}";
     }
 }
 
 
 // ============================================================
-// TOOLS DEL AGENTE DE ACCIÓN — PRECIO
+// TOOLS DEL AGENTE DE ACCIÓN — CLASES
 // ============================================================
 [McpServerToolType]
-public static class ToolsAccionPrecio
+public static class ToolsAccionClase
 {
-    [McpServerTool, Description("Corrige el precio de un producto en el catálogo.")]
-    public static string CorregirPrecio(
-        [Description("SKU del producto con precio incorrecto")]
-        string sku,
-        [Description("Precio correcto del producto")]
-        string precioCorrecto)
+    [McpServerTool, Description("Habilita una clase que figura incorrectamente como no disponible en el sistema de turnos.")]
+    public static string HabilitarClase(
+        [Description("Nombre o descripción de la clase a habilitar")]
+        string clase)
     {
-        return $"[PRECIO] Precio del producto {sku} actualizado a {precioCorrecto}. Catálogo actualizado exitosamente.";
+        return $"[CLASES] La clase '{clase}' fue habilitada correctamente en el sistema. Los socios ya pueden reservar turnos.";
     }
 
-    [McpServerTool, Description("Cierra un ticket de precio una vez resuelto.")]
-    public static string CerrarTicketPrecio(
+    [McpServerTool, Description("Cierra un ticket de clases una vez resuelto.")]
+    public static string CerrarTicketClase(
         [Description("ID del ticket a cerrar")]
         string ticketId,
         [Description("Descripción de la resolución")]
         string resolucion)
     {
-        return $"[PRECIO] Ticket {ticketId} cerrado. Resolución: {resolucion}";
+        return $"[CLASES] Ticket {ticketId} cerrado. Resolución: {resolucion}";
     }
 }
 
 
 // ============================================================
-// TOOLS DEL AGENTE DE ACCIÓN — STOCK
+// TOOLS DEL AGENTE DE ACCIÓN — INSTRUCTORES
 // ============================================================
 [McpServerToolType]
-public static class ToolsAccionStock
+public static class ToolsAccionInstructor
 {
-    [McpServerTool, Description("Sincroniza el stock de un producto que no se actualizó correctamente.")]
-    public static string SincronizarStock(
-        [Description("SKU del producto con stock desincronizado")]
-        string sku)
+    [McpServerTool, Description("Asigna un instructor disponible a una clase que no tiene instructor asignado.")]
+    public static string AsignarInstructor(
+        [Description("Nombre o descripción de la clase sin instructor")]
+        string clase)
     {
-        return $"[STOCK] Stock del producto {sku} sincronizado exitosamente. Inventario actualizado con los datos del último archivo de importación.";
+        return $"[INSTRUCTORES] Se asignó un instructor disponible a la clase '{clase}'. La agenda fue actualizada y los socios inscriptos fueron notificados.";
     }
 
-    [McpServerTool, Description("Cierra un ticket de stock una vez resuelto.")]
-    public static string CerrarTicketStock(
+    [McpServerTool, Description("Cierra un ticket de instructores una vez resuelto.")]
+    public static string CerrarTicketInstructor(
         [Description("ID del ticket a cerrar")]
         string ticketId,
         [Description("Descripción de la resolución")]
         string resolucion)
     {
-        return $"[STOCK] Ticket {ticketId} cerrado. Resolución: {resolucion}";
+        return $"[INSTRUCTORES] Ticket {ticketId} cerrado. Resolución: {resolucion}";
     }
 }
 
@@ -268,11 +255,11 @@ public static class ToolsAccionStock
 [McpServerToolType]
 public class ToolsKnowledgeBase(IKnowledgeBaseApiService kbApi)
 {
-    [McpServerTool, Description("Analiza el problema del ticket consultando la base de conocimiento y determina si el bot puede resolverlo o si hay que escalar a nivel 2. Retorna decision (continuar/pedir_mas_info/escalar), mensaje sugerido y criterios de escalación.")]
+    [McpServerTool, Description("Analiza el problema del ticket consultando la base de conocimiento de la turnera y determina si el bot puede resolverlo o si hay que escalar. Retorna decision (continuar/pedir_mas_info/escalar), mensaje sugerido y criterios de escalación.")]
     public async Task<string> DiagnosticarProblema(
-        [Description("Descripción del problema reportado por el usuario")]
+        [Description("Descripción del problema reportado por el socio")]
         string descripcion,
-        [Description("Sistema afectado (ej: usuarios, pedidos, pagos, catalogo, stock)")]
+        [Description("Sistema afectado (ej: socios, turnos, pagos, clases, instructores)")]
         string sistema)
     {
         var resultado = await kbApi.DiagnosticarAsync(sistema, descripcion);
@@ -288,22 +275,22 @@ public class ToolsKnowledgeBase(IKnowledgeBaseApiService kbApi)
 
         return System.Text.Json.JsonSerializer.Serialize(new
         {
-            puedoResolver       = resultado.PuedoResolver,
-            decision            = resultado.Decision,
-            confianza           = resultado.Confianza,
-            mensajeSugerido     = resultado.MensajeSugerido,
-            criteriosEscalacion = resultado.CriteriosEscalacion,
+            puedoResolver        = resultado.PuedoResolver,
+            decision             = resultado.Decision,
+            confianza            = resultado.Confianza,
+            mensajeSugerido      = resultado.MensajeSugerido,
+            criteriosEscalacion  = resultado.CriteriosEscalacion,
             accionesRecomendadas = resultado.AccionesRecomendadas,
-            articuloId          = resultado.ArticleId,
-            articuloCodigo      = resultado.ArticleCode
+            articuloId           = resultado.ArticleId,
+            articuloCodigo       = resultado.ArticleCode
         });
     }
 
-    [McpServerTool, Description("Consulta la base de conocimiento para obtener síntomas, causa probable, acción recomendada y criterios de escalación del artículo más relevante.")]
+    [McpServerTool, Description("Consulta la base de conocimiento de la turnera para obtener síntomas, causa probable, acción recomendada y criterios de escalación del artículo más relevante.")]
     public async Task<string> ConsultarKB(
         [Description("Descripción del problema a buscar en la KB")]
         string descripcion,
-        [Description("Sistema afectado (ej: usuarios, pedidos, pagos, catalogo, stock)")]
+        [Description("Sistema afectado (ej: socios, turnos, pagos, clases, instructores)")]
         string sistema)
     {
         var articulos = await kbApi.SearchAsync(descripcion, sistema);
@@ -318,17 +305,17 @@ public class ToolsKnowledgeBase(IKnowledgeBaseApiService kbApi)
         var top = articulos[0];
         return System.Text.Json.JsonSerializer.Serialize(new
         {
-            encontrado          = true,
-            articuloId          = top.ArticleId,
-            articuloCodigo      = top.ArticleCode,
-            descripcion         = top.Description,
-            sintomas            = top.Symptoms,
-            causaProbable       = top.ProbableCause,
-            accionRecomendada   = top.RecommendedAction,
-            datosRequeridos     = top.RequiredData,
-            criteriosEscalacion = top.EscalationCriteria,
-            mensajeSugerido     = top.SuggestedUserMessage,
-            confianza           = top.Confidence
+            encontrado           = true,
+            articuloId           = top.ArticleId,
+            articuloCodigo       = top.ArticleCode,
+            descripcion          = top.Description,
+            sintomas             = top.Symptoms,
+            causaProbable        = top.ProbableCause,
+            accionRecomendada    = top.RecommendedAction,
+            datosRequeridos      = top.RequiredData,
+            criteriosEscalacion  = top.EscalationCriteria,
+            mensajeSugerido      = top.SuggestedUserMessage,
+            confianza            = top.Confidence
         });
     }
 }

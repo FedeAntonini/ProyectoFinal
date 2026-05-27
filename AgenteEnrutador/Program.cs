@@ -38,7 +38,7 @@ IChatClient agente = new OpenAIClient(
     .Build();
 
 var systemPrompt = new ChatMessage(ChatRole.System, """
-    Sos el Agente Enrutador de soporte de e-commerce nivel 1.
+    Sos el Agente Enrutador de soporte de la turnera de pilates nivel 1.
 
     Cuando recibas un ID de ticket seguí estos pasos en orden:
     1. Llamá a la tool obtener_ticket para obtener los datos del ticket.
@@ -47,11 +47,11 @@ var systemPrompt = new ChatMessage(ChatRole.System, """
     4. Usá el resultado del diagnóstico para decidir a qué agente derivar:
        - Si el campo "decision" es "escalar" → elegí Escalacion.
        - Si el campo "decision" es "continuar" o "pedir_mas_info", elegí el agente según el sistema afectado:
-           * usuarios → AgenteAccionAcceso
-           * pedidos  → AgenteAccionPedido
-           * pagos    → AgenteAccionPago
-           * catalogo o precio → AgenteAccionPrecio
-           * stock    → AgenteAccionStock
+           * socios      → AgenteAccionSocio
+           * turnos      → AgenteAccionTurno
+           * pagos       → AgenteAccionPago
+           * clases      → AgenteAccionClase
+           * instructores → AgenteAccionInstructor
            * cualquier otro → Escalacion
     5. Respondé ÚNICAMENTE con este formato:
        DELEGAR_A: [nombre del agente]
@@ -62,7 +62,7 @@ var systemPrompt = new ChatMessage(ChatRole.System, """
     No incluyas tags XML ni HTML. No agregues texto adicional.
     """);
 
-Console.WriteLine("=== Agente Enrutador — E-Commerce Soporte N1 ===");
+Console.WriteLine("=== Agente Enrutador — Turnera de Pilates Soporte N1 ===");
 Console.WriteLine("Ingresá el ID del ticket a procesar (o 'salir' para terminar):");
 Console.WriteLine();
 

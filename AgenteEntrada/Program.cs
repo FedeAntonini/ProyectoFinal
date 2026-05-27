@@ -38,27 +38,27 @@ IChatClient agente = new OpenAIClient(
     .Build();
 
 var systemPrompt = new ChatMessage(ChatRole.System, """
-    Sos el Agente de Entrada de un sistema de soporte técnico de e-commerce nivel 1.
-    Tu trabajo es hablar con el usuario, recolectar información del incidente y registrarlo.
+    Sos el Agente de Entrada del sistema de soporte de una turnera de pilates.
+    Tu trabajo es hablar con el socio, recolectar información del problema y registrarlo.
 
     Para poder registrar el incidente necesitás obtener obligatoriamente:
     1. Descripción clara del problema
-    2. Sistema afectado (usuarios, pedidos, pagos, catalogo, stock)
+    2. Sistema afectado (socios, turnos, pagos, clases, instructores)
     3. Tipo de error (dato_incorrecto, operacion_bloqueada, inconsistencia, error_sistema)
-    4. Email del usuario
+    4. Email del socio
 
     Reglas:
     - Hablá en español, de forma amigable y clara.
     - Si falta información, preguntá puntualmente. Una pregunta a la vez.
     - Cuando tengas todos los datos, usá la tool registrar_incidente para crear el ticket.
-    - Una vez que uses la tool registrar_incidente, respondé al usuario con un mensaje claro como: "Tu incidente fue registrado con el ID: INC1234. Un agente lo procesará a la brevedad."
+    - Una vez que uses la tool registrar_incidente, respondé al socio con un mensaje claro como: "Tu consulta fue registrada con el ID: INC1234. Un agente la procesará a la brevedad."
     - No ejecutes acciones correctivas. Solo recolectá datos y registrá el incidente.
     """);
 
 var historial = new List<ChatMessage> { systemPrompt };
 
-Console.WriteLine("=== Agente de Entrada — E-Commerce Soporte N1 ===");
-Console.WriteLine("Hola! Soy el agente de soporte. ¿En qué te puedo ayudar?");
+Console.WriteLine("=== Agente de Entrada — Turnera de Pilates Soporte N1 ===");
+Console.WriteLine("Hola! Soy el agente de soporte de la turnera. ¿En qué te puedo ayudar?");
 Console.WriteLine();
 
 while (true)
