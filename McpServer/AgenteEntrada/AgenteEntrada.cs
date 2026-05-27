@@ -1,92 +1,200 @@
-﻿using McpServer.MessageQueue;
+using McpServer.MessageQueue;
 using McpServer.Services;
 using System.Text.Json;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
-using Microsoft.Extensions.AI;
 
 namespace McpServer.Agentes;
 
 public class AgenteEntrada
 {
     private readonly ILogger<AgenteEntrada> _logger;
-    private readonly LlmGateway _gateway;
     private readonly IConfiguration _config;
-
-    private const string SystemPrompt = """
-    Sos el Agente Enrutador de soporte de e-commerce nivel 1.
-
-    Cuando recibas un ID de ticket:
-    1. Llamá a la tool obtener_ticket para obtener los datos
-    2. Si el ticket no existe, respondé: TICKET_NO_ENCONTRADO: No se encontró un ticket con ese ID.
-    3. Si el ticket existe, analizá el problema y el sistema afectado y decidí cuál de estos agentes es el más adecuado para resolverlo:
-       - AgenteAccionAcceso: problemas de login, autenticación o acceso de usuarios
-       - AgenteAccionPedido: problemas con el estado o seguimiento de pedidos
-       - AgenteAccionPago: problemas con pagos, cobros o transacciones
-       - AgenteAccionPrecio: problemas con precios incorrectos en el catálogo
-       - AgenteAccionStock: problemas con inventario o sincronización de stock
-       - Escalacion: si el problema no encaja en ninguno de los anteriores
-    4. Respondé ÚNICAMENTE con: DELEGAR_A: [nombre del agente elegido]
-
-    No incluyas tags XML ni HTML. No agregues texto adicional.
-    """;
 
     public AgenteEntrada(
         ILogger<AgenteEntrada> logger,
-        LlmGateway gateway,
         IConfiguration config)
     {
         _logger = logger;
-        _gateway = gateway;
         _config = config;
     }
 
     public async Task<EntradaResult> ProcessAsync(InboundMessage message, CancellationToken ct = default)
     {
         _logger.LogInformation(
-            "Mensaje recibido — TicketId: {TicketId}, CustomerId: {CustomerId}",
+            "Procesando ticket — TicketId: {TicketId}, CustomerId: {CustomerId}",
             message.TicketId,
             message.CustomerId);
 
         await using var mcpClient = await CreateMcpClientAsync(ct);
-
         var runId = await CreateAgentRunAsync(mcpClient, int.Parse(message.TicketId), ct);
 
-        _logger.LogInformation(
-            "AgentRun creado — RunId: {RunId}, TicketId: {TicketId}",
-            runId,
-            message.TicketId);
+        try
+        {
+            // ── FASE 1: Obtener datos del ticket ────────────────────────────
+            var ticketRaw = await CallToolAsync(mcpClient, "obtener_ticket",
+                new Dictionary<string, object?> { ["ticketId"] = message.TicketId }, ct);
 
-        var messages = BuildMessages(message);
+            _logger.LogInformation("Ticket obtenido: {TicketData}", ticketRaw);
 
-        var response = await _gateway.CompleteAsync(
-            mcpClient,
-            SystemPrompt,
-            messages,
-            runId,
-            nameof(AgenteEntrada),
-            ct);
+            var ticket = ParseTicket(ticketRaw);
+            if (ticket == null)
+            {
+                _logger.LogWarning("Ticket {TicketId} no encontrado o no se pudo parsear", message.TicketId);
+                await UpdateAgentRunStatusAsync(mcpClient, runId, "failed", ct);
+                return EntradaResult.Accepted(message);
+            }
 
-        _logger.LogInformation("Respuesta de LLM recibida: {Response}", response);
+            // ── FASE 2: Diagnosticar via Knowledge Base ─────────────────────
+            var diagnosticoRaw = await CallToolAsync(mcpClient, "diagnosticar_problema",
+                new Dictionary<string, object?>
+                {
+                    ["descripcion"] = ticket.Problema,
+                    ["sistema"]     = ticket.Sistema
+                }, ct);
 
-        await UpdateAgentRunStatusAsync(mcpClient, runId, "completed", ct);
+            _logger.LogInformation("Diagnóstico KB: {Diagnostico}", diagnosticoRaw);
 
-        return EntradaResult.Accepted(message);
+            var decision = ParseDecision(diagnosticoRaw);
+
+            // ── FASE 3: Ejecutar acción según sistema y decisión ───────────
+            string accion;
+            string resultado;
+
+            if (decision == "escalar")
+            {
+                accion   = "Escalado a nivel 2";
+                resultado = "El problema requiere atención de soporte nivel 2.";
+                _logger.LogInformation("Ticket {TicketId} escalado a nivel 2", message.TicketId);
+            }
+            else
+            {
+                (accion, resultado) = await EjecutarAccionAsync(mcpClient, message.TicketId, ticket, ct);
+            }
+
+            _logger.LogInformation(
+                "Ticket {TicketId} resuelto — Acción: {Accion} | Resultado: {Resultado}",
+                message.TicketId, accion, resultado);
+
+            await UpdateAgentRunStatusAsync(mcpClient, runId, "completed", ct);
+            return EntradaResult.Accepted(message);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error procesando ticket {TicketId}", message.TicketId);
+            await UpdateAgentRunStatusAsync(mcpClient, runId, "failed", ct);
+            throw;
+        }
     }
 
-    private static IEnumerable<ChatMessage> BuildMessages(InboundMessage message) =>
-    [
-        new(ChatRole.User, $"Ticket {message.TicketId}: {message.Payload}")
-    ];
+    // ── Acciones por sistema ────────────────────────────────────────────────
+
+    private async Task<(string Accion, string Resultado)> EjecutarAccionAsync(
+        McpClient mcpClient, string ticketId, TicketInfo ticket, CancellationToken ct)
+    {
+        return ticket.Sistema.ToLower() switch
+        {
+            "socios"       => await EjecutarAccionSocioAsync(mcpClient, ticketId, ticket.Usuario, ct),
+            "turnos"       => await EjecutarAccionTurnoAsync(mcpClient, ticketId, ticket.Usuario, ct),
+            "pagos"        => await EjecutarAccionPagoAsync(mcpClient, ticketId, ticket.Usuario, ct),
+            "clases"       => await EjecutarAccionClaseAsync(mcpClient, ticketId, ticket.Problema, ct),
+            "instructores" => await EjecutarAccionInstructorAsync(mcpClient, ticketId, ticket.Problema, ct),
+            _              => ("Escalado", "Sistema no reconocido. Escalado a nivel 2.")
+        };
+    }
+
+    private async Task<(string, string)> EjecutarAccionSocioAsync(
+        McpClient client, string ticketId, string email, CancellationToken ct)
+    {
+        var resultado = await CallToolAsync(client, "resetear_acceso_socio",
+            new Dictionary<string, object?> { ["email"] = email }, ct);
+        await CallToolAsync(client, "cerrar_ticket_socio",
+            new Dictionary<string, object?> { ["ticketId"] = ticketId, ["resolucion"] = "Acceso reseteado y link de recuperación enviado." }, ct);
+        return ("Resetear acceso socio", resultado);
+    }
+
+    private async Task<(string, string)> EjecutarAccionTurnoAsync(
+        McpClient client, string ticketId, string email, CancellationToken ct)
+    {
+        var resultado = await CallToolAsync(client, "consultar_turno",
+            new Dictionary<string, object?> { ["email"] = email }, ct);
+        await CallToolAsync(client, "cerrar_ticket_turno",
+            new Dictionary<string, object?> { ["ticketId"] = ticketId, ["resolucion"] = "Turno verificado y reprogramado." }, ct);
+        return ("Consultar turno", resultado);
+    }
+
+    private async Task<(string, string)> EjecutarAccionPagoAsync(
+        McpClient client, string ticketId, string email, CancellationToken ct)
+    {
+        var resultado = await CallToolAsync(client, "consultar_cuota",
+            new Dictionary<string, object?> { ["email"] = email }, ct);
+        await CallToolAsync(client, "cerrar_ticket_pago",
+            new Dictionary<string, object?> { ["ticketId"] = ticketId, ["resolucion"] = "Pago verificado y créditos acreditados." }, ct);
+        return ("Consultar cuota", resultado);
+    }
+
+    private async Task<(string, string)> EjecutarAccionClaseAsync(
+        McpClient client, string ticketId, string problema, CancellationToken ct)
+    {
+        var resultado = await CallToolAsync(client, "habilitar_clase",
+            new Dictionary<string, object?> { ["clase"] = problema }, ct);
+        await CallToolAsync(client, "cerrar_ticket_clase",
+            new Dictionary<string, object?> { ["ticketId"] = ticketId, ["resolucion"] = "Clase habilitada correctamente." }, ct);
+        return ("Habilitar clase", resultado);
+    }
+
+    private async Task<(string, string)> EjecutarAccionInstructorAsync(
+        McpClient client, string ticketId, string problema, CancellationToken ct)
+    {
+        var resultado = await CallToolAsync(client, "asignar_instructor",
+            new Dictionary<string, object?> { ["clase"] = problema }, ct);
+        await CallToolAsync(client, "cerrar_ticket_instructor",
+            new Dictionary<string, object?> { ["ticketId"] = ticketId, ["resolucion"] = "Instructor asignado correctamente." }, ct);
+        return ("Asignar instructor", resultado);
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────────────────
+
+    private static async Task<string> CallToolAsync(
+        McpClient client, string tool, Dictionary<string, object?> args, CancellationToken ct)
+    {
+        var result = await client.CallToolAsync(tool, args, cancellationToken: ct);
+        return result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text ?? "";
+    }
+
+    private static TicketInfo? ParseTicket(string raw)
+    {
+        try
+        {
+            // El formato es: "Ticket INC0001: {...json...}"
+            var jsonStart = raw.IndexOf('{');
+            if (jsonStart < 0) return null;
+            var json = raw[jsonStart..];
+            return JsonSerializer.Deserialize<TicketInfo>(json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch { return null; }
+    }
+
+    private static string ParseDecision(string diagnosticoJson)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(diagnosticoJson);
+            return doc.RootElement.GetProperty("decision").GetString() ?? "escalar";
+        }
+        catch { return "escalar"; }
+    }
 
     private async Task<McpClient> CreateMcpClientAsync(CancellationToken ct)
     {
-        var mcpUrl = _config["McpServer:BaseUrl"] ?? throw new InvalidOperationException("Missing McpServer:BaseUrl");
+        var mcpUrl = _config["McpServer:BaseUrl"]
+            ?? throw new InvalidOperationException("Missing McpServer:BaseUrl");
 
         var transport = new HttpClientTransport(new HttpClientTransportOptions
         {
             Endpoint = new Uri($"{mcpUrl}/mcp"),
-            Name = "McpServer"
+            Name     = "McpServer"
         });
 
         return await McpClient.CreateAsync(transport, cancellationToken: ct);
@@ -99,9 +207,7 @@ public class AgenteEntrada
             new Dictionary<string, object?> { ["ticketId"] = ticketId },
             cancellationToken: ct);
 
-        var text = result.Content
-            .OfType<TextContentBlock>()
-            .FirstOrDefault()?.Text
+        var text = result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text
             ?? throw new InvalidOperationException("create_agent_run returned no text content.");
 
         var run = JsonSerializer.Deserialize<AgentRunResult>(text,
@@ -119,5 +225,6 @@ public class AgenteEntrada
             cancellationToken: ct);
     }
 
+    private record TicketInfo(string Usuario, string Problema, string Prioridad, string Sistema);
     private record AgentRunResult(int Id, int TicketId, string Status, DateTime StartedAt, DateTime? EndedAt);
 }
