@@ -8,12 +8,13 @@ var API_KEY = Environment.GetEnvironmentVariable("GROQ_API_KEY")
     ?? throw new Exception("Falta la variable de entorno GROQ_API_KEY");
 const string MODELO = "llama-3.3-70b-versatile";
 
-Console.WriteLine("Conectando al MCP Server...");
+var mcpUrl = Environment.GetEnvironmentVariable("MCP_SERVER_URL") ?? "http://localhost:61559";
 
-var transporte = new StdioClientTransport(new StdioClientTransportOptions
+Console.WriteLine($"Conectando al MCP Server en {mcpUrl}...");
+
+var transporte = new HttpClientTransport(new HttpClientTransportOptions
 {
-    Command = "dotnet",
-    Arguments = ["run", "--project", "../McpServer"],
+    Endpoint = new Uri($"{mcpUrl}/mcp"),
     Name = "SoporteMcpServer",
 });
 
