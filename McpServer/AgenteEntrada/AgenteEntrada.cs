@@ -97,8 +97,8 @@ public class AgenteEntrada
             "socios"       => await EjecutarAccionSocioAsync(mcpClient, ticketId, ticket.Usuario, ct),
             "turnos"       => await EjecutarAccionTurnoAsync(mcpClient, ticketId, ticket.Usuario, ct),
             "pagos"        => await EjecutarAccionPagoAsync(mcpClient, ticketId, ticket.Usuario, ct),
-            "clases"       => await EjecutarAccionClaseAsync(mcpClient, ticketId, ticket.Problema, ct),
-            "instructores" => await EjecutarAccionInstructorAsync(mcpClient, ticketId, ticket.Problema, ct),
+            "clases"       => await EjecutarAccionClaseAsync(mcpClient, ticketId, ticket.Usuario, ticket.Problema, ct),
+            "instructores" => await EjecutarAccionInstructorAsync(mcpClient, ticketId, ticket.Usuario, ticket.Problema, ct),
             _              => ("Escalado", "Sistema no reconocido. Escalado a nivel 2.")
         };
     }
@@ -134,23 +134,23 @@ public class AgenteEntrada
     }
 
     private async Task<(string, string)> EjecutarAccionClaseAsync(
-        McpClient client, string ticketId, string problema, CancellationToken ct)
+        McpClient client, string ticketId, string email, string problema, CancellationToken ct)
     {
         var resultado = await CallToolAsync(client, "habilitar_clase",
-            new Dictionary<string, object?> { ["clase"] = problema }, ct);
+            new Dictionary<string, object?> { ["email"] = email, ["clase"] = problema }, ct);
         await CallToolAsync(client, "cerrar_ticket_clase",
-            new Dictionary<string, object?> { ["ticketId"] = ticketId, ["resolucion"] = "Clase habilitada correctamente." }, ct);
-        return ("Habilitar clase", resultado);
+            new Dictionary<string, object?> { ["ticketId"] = ticketId, ["resolucion"] = "Disponibilidad verificada y clase habilitada." }, ct);
+        return ("Verificar disponibilidad clase", resultado);
     }
 
     private async Task<(string, string)> EjecutarAccionInstructorAsync(
-        McpClient client, string ticketId, string problema, CancellationToken ct)
+        McpClient client, string ticketId, string email, string problema, CancellationToken ct)
     {
         var resultado = await CallToolAsync(client, "asignar_instructor",
-            new Dictionary<string, object?> { ["clase"] = problema }, ct);
+            new Dictionary<string, object?> { ["email"] = email, ["clase"] = problema }, ct);
         await CallToolAsync(client, "cerrar_ticket_instructor",
-            new Dictionary<string, object?> { ["ticketId"] = ticketId, ["resolucion"] = "Instructor asignado correctamente." }, ct);
-        return ("Asignar instructor", resultado);
+            new Dictionary<string, object?> { ["ticketId"] = ticketId, ["resolucion"] = "Instructor verificado y confirmado correctamente." }, ct);
+        return ("Verificar instructor", resultado);
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────

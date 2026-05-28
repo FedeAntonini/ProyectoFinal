@@ -7,6 +7,7 @@ using McpServer.MessageQueue;
 using McpServer.Agentes;
 using McpServer.Services;
 using McpServer.Api;
+using McpServer.Api.Turnera;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json.Serialization;
 
@@ -131,14 +132,15 @@ public static class ToolsEnrutador
 // TOOLS DEL AGENTE DE ACCIÓN — SOCIOS
 // ============================================================
 [McpServerToolType]
-public static class ToolsAccionSocio
+public class ToolsAccionSocio(ITurneraApiService turneraApi)
 {
-    [McpServerTool, Description("Resetea el acceso de un socio que no puede ingresar a la app de la turnera.")]
-    public static string ResetearAccesoSocio(
+    [McpServerTool, Description("Resetea el acceso de un socio que no puede ingresar a la app de la turnera. Genera una contraseña temporal y la actualiza en el sistema.")]
+    public async Task<string> ResetearAccesoSocio(
         [Description("Email del socio con problema de acceso")]
-        string email)
+        string email,
+        CancellationToken ct = default)
     {
-        return $"[SOCIOS] Acceso reseteado para {email}. Se envió un link de recuperación al email registrado.";
+        return await turneraApi.ResetearAccesoAsync(email, ct);
     }
 
     [McpServerTool, Description("Cierra un ticket de socios una vez resuelto.")]
@@ -157,14 +159,15 @@ public static class ToolsAccionSocio
 // TOOLS DEL AGENTE DE ACCIÓN — TURNOS
 // ============================================================
 [McpServerToolType]
-public static class ToolsAccionTurno
+public class ToolsAccionTurno(ITurneraApiService turneraApi)
 {
-    [McpServerTool, Description("Consulta el estado de un turno y reprograma si fue cancelado incorrectamente.")]
-    public static string ConsultarTurno(
+    [McpServerTool, Description("Consulta las reservas activas de un socio en la turnera de pilates.")]
+    public async Task<string> ConsultarTurno(
         [Description("Email del socio con problema de turno")]
-        string email)
+        string email,
+        CancellationToken ct = default)
     {
-        return $"[TURNOS] Se verificó el turno de {email}. El turno fue reprogramado para el mismo horario de la semana siguiente y se notificó al socio por email.";
+        return await turneraApi.ConsultarTurnosAsync(email, ct);
     }
 
     [McpServerTool, Description("Cierra un ticket de turnos una vez resuelto.")]
@@ -183,14 +186,15 @@ public static class ToolsAccionTurno
 // TOOLS DEL AGENTE DE ACCIÓN — PAGOS
 // ============================================================
 [McpServerToolType]
-public static class ToolsAccionPago
+public class ToolsAccionPago(ITurneraApiService turneraApi)
 {
-    [McpServerTool, Description("Verifica el estado de la cuota de un socio y gestiona devoluciones por cobros duplicados.")]
-    public static string ConsultarCuota(
+    [McpServerTool, Description("Consulta los pagos y créditos disponibles de un socio en la turnera de pilates.")]
+    public async Task<string> ConsultarCuota(
         [Description("Email del socio con problema de pago")]
-        string email)
+        string email,
+        CancellationToken ct = default)
     {
-        return $"[PAGOS] Se verificó el cobro de {email}. Se detectó un cobro duplicado de la cuota mensual. El área de administración fue notificada para procesar la devolución en 48hs hábiles.";
+        return await turneraApi.ConsultarPagosAsync(email, ct);
     }
 
     [McpServerTool, Description("Cierra un ticket de pagos una vez resuelto.")]
@@ -209,14 +213,17 @@ public static class ToolsAccionPago
 // TOOLS DEL AGENTE DE ACCIÓN — CLASES
 // ============================================================
 [McpServerToolType]
-public static class ToolsAccionClase
+public class ToolsAccionClase(ITurneraApiService turneraApi)
 {
-    [McpServerTool, Description("Habilita una clase que figura incorrectamente como no disponible en el sistema de turnos.")]
-    public static string HabilitarClase(
-        [Description("Nombre o descripción de la clase a habilitar")]
-        string clase)
+    [McpServerTool, Description("Verifica la disponibilidad real de los turnos de un socio consultando directamente la base de datos de la turnera.")]
+    public async Task<string> HabilitarClase(
+        [Description("Email del socio con problema de disponibilidad")]
+        string email,
+        [Description("Descripción del problema con la clase")]
+        string clase,
+        CancellationToken ct = default)
     {
-        return $"[CLASES] La clase '{clase}' fue habilitada correctamente en el sistema. Los socios ya pueden reservar turnos.";
+        return await turneraApi.VerificarDisponibilidadClaseAsync(email, ct);
     }
 
     [McpServerTool, Description("Cierra un ticket de clases una vez resuelto.")]
@@ -235,14 +242,17 @@ public static class ToolsAccionClase
 // TOOLS DEL AGENTE DE ACCIÓN — INSTRUCTORES
 // ============================================================
 [McpServerToolType]
-public static class ToolsAccionInstructor
+public class ToolsAccionInstructor(ITurneraApiService turneraApi)
 {
-    [McpServerTool, Description("Asigna un instructor disponible a una clase que no tiene instructor asignado.")]
-    public static string AsignarInstructor(
-        [Description("Nombre o descripción de la clase sin instructor")]
-        string clase)
+    [McpServerTool, Description("Verifica y confirma el instructor asignado a las reservas de un socio consultando directamente la base de datos de la turnera.")]
+    public async Task<string> AsignarInstructor(
+        [Description("Email del socio con problema de instructor")]
+        string email,
+        [Description("Descripción del problema con el instructor")]
+        string clase,
+        CancellationToken ct = default)
     {
-        return $"[INSTRUCTORES] Se asignó un instructor disponible a la clase '{clase}'. La agenda fue actualizada y los socios inscriptos fueron notificados.";
+        return await turneraApi.VerificarAsignacionInstructorAsync(email, ct);
     }
 
     [McpServerTool, Description("Cierra un ticket de instructores una vez resuelto.")]
