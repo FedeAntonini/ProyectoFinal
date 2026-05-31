@@ -169,11 +169,11 @@ public static class ToolsAccionPedido
 public static class ToolsAccionAcceso
 {
     [McpServerTool, Description("Resetea el acceso de un usuario que no puede iniciar sesión.")]
-    public static string ResetearAcceso(
+    public static async Task<string> ResetearAcceso(
         [Description("Email del usuario con problema de acceso")]
         string usuario)
     {
-        return $"[ACCESO] Acceso reseteado para {usuario}. Se envió un link de recuperación al email registrado.";
+        return await TurneraApi.ResetearAccesoAsync(usuario);
     }
 
     [McpServerTool, Description("Cierra un ticket de acceso una vez resuelto.")]
@@ -392,6 +392,60 @@ public static class AgentAiApi
     }
 }
 
+public static class TurneraApi
+{
+    private static readonly HttpClient Http = new()
+    {
+        BaseAddress = new Uri(Environment.GetEnvironmentVariable("TURNERA_API_URL") ?? "http://localhost:3000")
+    };
+
+    public static async Task<string> ResetearAccesoAsync(string email)
+    {
+        var apiKey = Environment.GetEnvironmentVariable("AGENT_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey))
+            return "[ACCESO] No puedo resetear el acceso: falta configurar AGENT_API_KEY en el entorno del agente.";
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/agent/reset-acceso")
+        {
+            Content = JsonContent.Create(new { email }, options: AgentAiApi.JsonOptions)
+        };
+        request.Headers.Add("x-api-key", apiKey);
+
+        using var response = await Http.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+            return $"[ACCESO] No pude resetear el acceso para {email}. Turnera respondió {(int)response.StatusCode}: {TryReadError(body)}";
+
+        var result = JsonSerializer.Deserialize<TurneraResetAccessResponse>(body, AgentAiApi.JsonOptions)
+            ?? throw new InvalidOperationException("La turnera no devolvió una respuesta válida.");
+
+        var message = string.IsNullOrWhiteSpace(result.Mensaje)
+            ? "Acceso reseteado correctamente."
+            : result.Mensaje;
+
+        return $"[ACCESO] {message}";
+    }
+
+    private static string TryReadError(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            return "sin detalle";
+
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            return document.RootElement.TryGetProperty("error", out var error)
+                ? error.GetString() ?? body
+                : body;
+        }
+        catch (JsonException)
+        {
+            return body;
+        }
+    }
+}
+
 public record CreateAgentTicketRequest(
     string Description,
     string System,
@@ -432,6 +486,17 @@ public record KbResult(
     string Solution,
     string Confidence,
     string RecommendedAction);
+
+public record TurneraResetAccessResponse(
+    bool Ok,
+    TurneraSocioResponse? Socio,
+    string? TempPassword,
+    string? Mensaje);
+
+public record TurneraSocioResponse(
+    string Id,
+    string Name,
+    string Email);
 
 public record KnowledgeBaseSearchResult(
     int ArticleId,

@@ -13,7 +13,7 @@ Console.WriteLine("Conectando al MCP Server...");
 var transporte = new StdioClientTransport(new StdioClientTransportOptions
 {
     Command = "dotnet",
-    Arguments = ["run", "--project", "../McpServer"],
+    Arguments = ["run", "--no-build", "--project", "../McpServer"],
     Name = "SoporteMcpServer",
 });
 
