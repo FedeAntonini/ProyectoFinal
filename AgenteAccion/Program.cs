@@ -3,9 +3,11 @@ using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using OpenAI;
 using System.ClientModel;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
-var API_KEY = Environment.GetEnvironmentVariable("GROQ_API_KEY")
-    ?? throw new Exception("Falta la variable de entorno GROQ_API_KEY");
+var API_KEY = Environment.GetEnvironmentVariable("GROQ_API_KEY");
 const string MODELO = "llama-3.3-70b-versatile";
 
 Console.WriteLine("Conectando al MCP Server...");
@@ -13,7 +15,7 @@ Console.WriteLine("Conectando al MCP Server...");
 var transporte = new StdioClientTransport(new StdioClientTransportOptions
 {
     Command = "dotnet",
-    Arguments = ["run", "--project", "../McpServer"],
+    Arguments = ["run", "--no-build", "--project", "../McpServer"],
     Name = "SoporteMcpServer",
 });
 
@@ -40,7 +42,14 @@ var toolsStock = todasLasTools
     .Where(t => t.Name is "sincronizar_stock" or "cerrar_ticket_stock")
     .ToList();
 
+var toolsEscalacion = todasLasTools
+    .Where(t => t.Name is "escalar_ticket")
+    .ToList();
+
 IChatClient CrearSubagente() =>
+    string.IsNullOrWhiteSpace(API_KEY)
+        ? throw new Exception("Falta la variable de entorno GROQ_API_KEY")
+        :
     new OpenAIClient(
         new ApiKeyCredential(API_KEY),
         new OpenAIClientOptions
@@ -83,6 +92,13 @@ var systemStock = new ChatMessage(ChatRole.System, """
     No diagnostiques. Solo ejecutá.
     """);
 
+var systemEscalacion = new ChatMessage(ChatRole.System, """
+    Sos el agente de escalación de soporte de e-commerce.
+    Tu único trabajo es escalar el ticket cuando no haya solución segura en la KB o cuando falten permisos/datos para resolver.
+    Usá la tool escalar_ticket y explicá brevemente el motivo.
+    No intentes resolver el caso.
+    """);
+
 Console.WriteLine("=== Agente de Acción — E-Commerce Soporte N1 ===");
 Console.WriteLine("Pegá el diagnóstico del Enrutador (o 'salir' para terminar):");
 Console.WriteLine();
@@ -95,6 +111,15 @@ while (true)
 
     try
     {
+        if (await TryHandleDeterministicAccessAsync(diagnostico))
+            continue;
+
+        if (await TryHandleDeterministicPaymentAsync(diagnostico))
+            continue;
+
+        if (await TryHandleDeterministicTurnoAsync(diagnostico))
+            continue;
+
         if (diagnostico.Contains("AgenteAccionPedido", StringComparison.OrdinalIgnoreCase) ||
             diagnostico.Contains("pedido", StringComparison.OrdinalIgnoreCase))
         {
@@ -146,6 +171,16 @@ while (true)
             );
             Console.WriteLine($"\n[SubagenteStock] {respuesta.Text}\n");
         }
+        else if (diagnostico.Contains("Escalacion", StringComparison.OrdinalIgnoreCase) ||
+                 diagnostico.Contains("escalar", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("\n[AgenteAccion] Levantando subagente: ESCALACION");
+            var respuesta = await CrearSubagente().GetResponseAsync(
+                [systemEscalacion, new(ChatRole.User, diagnostico)],
+                new ChatOptions { Tools = [.. toolsEscalacion] }
+            );
+            Console.WriteLine($"\n[SubagenteEscalacion] {respuesta.Text}\n");
+        }
         else
         {
             Console.WriteLine("\n[AgenteAccion] No se encontró subagente. Escalando a nivel 2.\n");
@@ -158,3 +193,314 @@ while (true)
 }
 
 Console.WriteLine("Sesión terminada.");
+
+static async Task<bool> TryHandleDeterministicAccessAsync(string diagnostico)
+{
+    if (!diagnostico.Contains("AgenteAccionAcceso", StringComparison.OrdinalIgnoreCase) &&
+        !diagnostico.Contains("resetear_acceso", StringComparison.OrdinalIgnoreCase))
+    {
+        return false;
+    }
+
+    var email = ExtractEmail(diagnostico);
+    var ticketId = ExtractTicketNumber(diagnostico);
+
+    if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(ticketId))
+    {
+        Console.WriteLine("\n[SubagenteAcceso] Faltan datos para ejecutar acceso. Necesito TICKET y USUARIO/email.\n");
+        return true;
+    }
+
+    Console.WriteLine("\n[AgenteAccion] Levantando subagente: ACCESO");
+
+    var reset = await ResetTurneraAccessAsync(email);
+    if (!reset.Ok)
+    {
+        Console.WriteLine($"\n[SubagenteAcceso] No pude resetear el acceso para {email}. Motivo: {reset.Message}\n");
+        return true;
+    }
+
+    var resolution = string.IsNullOrWhiteSpace(reset.TempPassword)
+        ? $"Acceso reseteado para {email}."
+        : $"Acceso reseteado para {email}. Password temporal: {reset.TempPassword}.";
+
+    var closeResult = await CloseAgentAiTicketAsync(ticketId, resolution);
+    Console.WriteLine($"\n[SubagenteAcceso] {resolution} {closeResult}\n");
+    return true;
+}
+
+static async Task<bool> TryHandleDeterministicPaymentAsync(string diagnostico)
+{
+    if (!diagnostico.Contains("AgenteAccionPago", StringComparison.OrdinalIgnoreCase) &&
+        !diagnostico.Contains("consultar_pago", StringComparison.OrdinalIgnoreCase))
+    {
+        return false;
+    }
+
+    var email = ExtractEmail(diagnostico);
+    var ticketId = ExtractTicketNumber(diagnostico);
+
+    if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(ticketId))
+    {
+        Console.WriteLine("\n[SubagentePago] Faltan datos para consultar pagos. Necesito TICKET y USUARIO/email.\n");
+        return true;
+    }
+
+    Console.WriteLine("\n[AgenteAccion] Levantando subagente: PAGO");
+
+    var payment = await GetTurneraPaymentsAsync(email);
+    if (!payment.Ok)
+    {
+        Console.WriteLine($"\n[SubagentePago] No pude consultar pagos para {email}. Motivo: {payment.Message}\n");
+        return true;
+    }
+
+    var resolution = $"Pagos consultados para {email}. Pagos registrados: {payment.PaymentCount}. Creditos disponibles: {payment.Credits}.";
+    if (payment.PaymentCount == 0)
+    {
+        Console.WriteLine($"\n[SubagentePago] {resolution} No cierro el ticket porque no hay pagos registrados para validar la acreditacion.\n");
+        return true;
+    }
+
+    if (payment.Credits <= 0)
+    {
+        Console.WriteLine($"\n[SubagentePago] {resolution} No cierro el ticket porque el socio no tiene creditos disponibles; requiere acreditacion manual o una accion especifica de acreditacion.\n");
+        return true;
+    }
+
+    var closeResult = await CloseAgentAiTicketAsync(ticketId, resolution);
+    Console.WriteLine($"\n[SubagentePago] {resolution} {closeResult}\n");
+    return true;
+}
+
+static string? ExtractEmail(string text)
+{
+    var match = Regex.Match(text, @"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", RegexOptions.IgnoreCase);
+    return match.Success ? match.Value : null;
+}
+
+static string? ExtractTicketNumber(string text)
+{
+    var match = Regex.Match(text, @"\bINC[\s-]*\d{4,12}\b", RegexOptions.IgnoreCase);
+    return match.Success ? string.Concat(match.Value.ToUpperInvariant().Where(char.IsLetterOrDigit)) : null;
+}
+
+static async Task<ResetAccessResult> ResetTurneraAccessAsync(string email)
+{
+    var apiKey = Environment.GetEnvironmentVariable("AGENT_API_KEY");
+    if (string.IsNullOrWhiteSpace(apiKey))
+        return new ResetAccessResult(false, null, "Falta AGENT_API_KEY.");
+
+    var baseUrl = Environment.GetEnvironmentVariable("TURNERA_API_URL") ?? "http://localhost:3000";
+    using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
+    using var request = new HttpRequestMessage(HttpMethod.Post, "/api/agent/reset-acceso")
+    {
+        Content = JsonContent.Create(new { email })
+    };
+    request.Headers.Add("x-api-key", apiKey);
+
+    using var response = await http.SendAsync(request);
+    var body = await response.Content.ReadAsStringAsync();
+
+    if (!response.IsSuccessStatusCode)
+        return new ResetAccessResult(false, null, TryReadError(body));
+
+    var result = JsonSerializer.Deserialize<TurneraResetAccessResponse>(body, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+    return new ResetAccessResult(result?.Ok == true, result?.TempPassword, result?.Mensaje ?? "Respuesta invalida de Turnera.");
+}
+
+static async Task<PaymentQueryResult> GetTurneraPaymentsAsync(string email)
+{
+    var apiKey = Environment.GetEnvironmentVariable("AGENT_API_KEY");
+    if (string.IsNullOrWhiteSpace(apiKey))
+        return new PaymentQueryResult(false, 0, 0, "Falta AGENT_API_KEY.");
+
+    var baseUrl = Environment.GetEnvironmentVariable("TURNERA_API_URL") ?? "http://localhost:3000";
+    using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
+    using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/agent/pagos?email={Uri.EscapeDataString(email)}");
+    request.Headers.Add("x-api-key", apiKey);
+
+    using var response = await http.SendAsync(request);
+    var body = await response.Content.ReadAsStringAsync();
+
+    if (!response.IsSuccessStatusCode)
+        return new PaymentQueryResult(false, 0, 0, TryReadError(body));
+
+    using var document = JsonDocument.Parse(body);
+    var root = document.RootElement;
+    var payments = root.TryGetProperty("pagos", out var pagos) && pagos.ValueKind == JsonValueKind.Array
+        ? pagos.GetArrayLength()
+        : 0;
+    var credits = 0;
+    if (root.TryGetProperty("credits", out var creditElement))
+    {
+        if (creditElement.ValueKind == JsonValueKind.Number)
+        {
+            creditElement.TryGetInt32(out credits);
+        }
+        else if (creditElement.ValueKind == JsonValueKind.Object &&
+                 creditElement.TryGetProperty("availableClasses", out var availableClasses))
+        {
+            availableClasses.TryGetInt32(out credits);
+        }
+    }
+
+    return new PaymentQueryResult(true, payments, credits, "Pagos consultados.");
+}
+
+static async Task<string> CloseAgentAiTicketAsync(string ticketId, string resolution)
+{
+    var baseUrl = Environment.GetEnvironmentVariable("AGENTAI_API_URL") ?? "http://localhost:5038";
+    using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
+
+    using var ticketResponse = await http.GetAsync($"/tickets/by-number/{Uri.EscapeDataString(ticketId)}");
+    if (ticketResponse.StatusCode == System.Net.HttpStatusCode.NotFound)
+        return $"No encontre el ticket {ticketId} para cerrarlo.";
+
+    ticketResponse.EnsureSuccessStatusCode();
+    var ticket = await ticketResponse.Content.ReadFromJsonAsync<AgentTicketResponse>();
+    if (ticket is null)
+        return $"No encontre el ticket {ticketId} para cerrarlo.";
+
+    var request = new
+    {
+        description = $"{ticket.Description}\n\nResolucion: {resolution}",
+        state = 4,
+        stateLabel = "Resolved",
+        resolvedAt = DateTime.UtcNow
+    };
+
+    using var response = await http.PutAsJsonAsync($"/tickets/{ticket.Id}", request);
+    return response.IsSuccessStatusCode
+        ? $"Ticket {ticketId} cerrado."
+        : $"No pude cerrar el ticket {ticketId}. API respondio {(int)response.StatusCode}.";
+}
+
+static string FormatDate(string date)
+{
+    if (!DateOnly.TryParse(date, out var d))
+        return date;
+
+    var dia = d.DayOfWeek switch
+    {
+        DayOfWeek.Monday    => "Lunes",
+        DayOfWeek.Tuesday   => "Martes",
+        DayOfWeek.Wednesday => "Miércoles",
+        DayOfWeek.Thursday  => "Jueves",
+        DayOfWeek.Friday    => "Viernes",
+        DayOfWeek.Saturday  => "Sábado",
+        DayOfWeek.Sunday    => "Domingo",
+        _                   => ""
+    };
+
+    return $"{dia} {d:dd/MM/yyyy}";
+}
+
+static string TryReadError(string body)
+{
+    if (string.IsNullOrWhiteSpace(body))
+        return "sin detalle";
+
+    try
+    {
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement.TryGetProperty("error", out var error)
+            ? error.GetString() ?? body
+            : body;
+    }
+    catch (JsonException)
+    {
+        return body;
+    }
+}
+
+static async Task<bool> TryHandleDeterministicTurnoAsync(string diagnostico)
+{
+    if (!diagnostico.Contains("AgenteAccionTurno", StringComparison.OrdinalIgnoreCase) &&
+        !diagnostico.Contains("consultar_turno", StringComparison.OrdinalIgnoreCase))
+    {
+        return false;
+    }
+
+    var email = ExtractEmail(diagnostico);
+    var ticketId = ExtractTicketNumber(diagnostico);
+
+    if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(ticketId))
+    {
+        Console.WriteLine("\n[SubagenteTurno] Faltan datos para consultar turnos. Necesito TICKET y USUARIO/email.\n");
+        return true;
+    }
+
+    Console.WriteLine("\n[AgenteAccion] Levantando subagente: TURNO");
+
+    var turno = await GetTurneraTurnosAsync(email);
+    if (!turno.Ok)
+    {
+        Console.WriteLine($"\n[SubagenteTurno] No pude consultar turnos para {email}. Motivo: {turno.Message}\n");
+        return true;
+    }
+
+    string resolution;
+    if (turno.Turnos.Count == 0)
+    {
+        resolution = $"Turnos consultados para {email}. No hay turnos reservados activos.";
+    }
+    else
+    {
+        var detalle = string.Join("\n", turno.Turnos.Select((t, i) =>
+        {
+            var fecha = FormatDate(t.Date);
+            var extra = string.IsNullOrWhiteSpace(t.Teacher) ? "" : $" — {t.Teacher}" +
+                        (string.IsNullOrWhiteSpace(t.Specialty) ? "" : $" ({t.Specialty})");
+            return $"  {i + 1}. {fecha} a las {t.Time}{extra}";
+        }));
+        resolution = $"Turnos consultados para {email}. Turnos reservados: {turno.Turnos.Count}.\n{detalle}";
+    }
+
+    var closeResult = await CloseAgentAiTicketAsync(ticketId, resolution);
+    Console.WriteLine($"\n[SubagenteTurno] {resolution} {closeResult}\n");
+    return true;
+}
+
+static async Task<TurnoQueryResult> GetTurneraTurnosAsync(string email)
+{
+    var apiKey = Environment.GetEnvironmentVariable("AGENT_API_KEY");
+    if (string.IsNullOrWhiteSpace(apiKey))
+        return new TurnoQueryResult(false, [], "Falta AGENT_API_KEY.");
+
+    var baseUrl = Environment.GetEnvironmentVariable("TURNERA_API_URL") ?? "http://localhost:3000";
+    using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
+    using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/agent/turnos?email={Uri.EscapeDataString(email)}");
+    request.Headers.Add("x-api-key", apiKey);
+
+    using var response = await http.SendAsync(request);
+    var body = await response.Content.ReadAsStringAsync();
+
+    if (!response.IsSuccessStatusCode)
+        return new TurnoQueryResult(false, [], TryReadError(body));
+
+    using var document = JsonDocument.Parse(body);
+    var root = document.RootElement;
+
+    var turnos = new List<TurnoInfo>();
+    if (root.TryGetProperty("turnos", out var turnosEl) && turnosEl.ValueKind == JsonValueKind.Array)
+    {
+        foreach (var t in turnosEl.EnumerateArray())
+        {
+            var date = t.TryGetProperty("date", out var d) ? d.GetString() ?? "" : "";
+            var time = t.TryGetProperty("time", out var ti) ? ti.GetString() ?? "" : "";
+            var teacher = t.TryGetProperty("teacherName", out var tn) ? tn.GetString() ?? "" : "";
+            var specialty = t.TryGetProperty("specialty", out var sp) ? sp.GetString() ?? "" : "";
+            turnos.Add(new TurnoInfo(date, time, teacher, specialty));
+        }
+    }
+
+    return new TurnoQueryResult(true, turnos, "Turnos consultados.");
+}
+
+public sealed record ResetAccessResult(bool Ok, string? TempPassword, string? Message);
+public sealed record PaymentQueryResult(bool Ok, int PaymentCount, int Credits, string? Message);
+public sealed record TurnoQueryResult(bool Ok, List<TurnoInfo> Turnos, string? Message);
+public sealed record TurnoInfo(string Date, string Time, string Teacher, string Specialty);
+public sealed record TurneraResetAccessResponse(bool Ok, string? TempPassword, string? Mensaje);
+public sealed record AgentTicketResponse(int Id, string Number, string Description);

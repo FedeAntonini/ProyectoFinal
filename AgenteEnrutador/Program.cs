@@ -13,7 +13,7 @@ Console.WriteLine("Conectando al MCP Server...");
 var transporte = new StdioClientTransport(new StdioClientTransportOptions
 {
     Command = "dotnet",
-    Arguments = ["run", "--project", "../McpServer"],
+    Arguments = ["run", "--no-build", "--project", "../McpServer"],
     Name = "SoporteMcpServer",
 });
 
@@ -21,7 +21,7 @@ await using var mcp = await McpClient.CreateAsync(transporte);
 var todasLasTools = await mcp.ListToolsAsync();
 
 var toolsEnrutador = todasLasTools
-    .Where(t => t.Name is "obtener_ticket")
+    .Where(t => t.Name is "obtener_ticket" or "diagnosticar_problema" or "buscar_kb")
     .ToList();
 
 IChatClient agente = new OpenAIClient(
@@ -42,14 +42,18 @@ var systemPrompt = new ChatMessage(ChatRole.System, """
     Cuando recibas un ID de ticket:
     1. Llamá a la tool obtener_ticket para obtener los datos
     2. Si el ticket no existe, respondé: TICKET_NO_ENCONTRADO: No se encontró un ticket con ese ID.
-    3. Si el ticket existe, analizá el problema y el sistema afectado y decidí cuál de estos agentes es el más adecuado para resolverlo:
+    3. Si el ticket existe, analizá el problema y el sistema afectado.
+    4. Llamá a buscar_kb usando la descripción y el sistema del ticket.
+    5. Si la KB devuelve una solución con confianza alta o media, decidí cuál agente debe ejecutarla:
        - AgenteAccionAcceso: problemas de login, autenticación o acceso de usuarios
        - AgenteAccionPedido: problemas con el estado o seguimiento de pedidos
        - AgenteAccionPago: problemas con pagos, cobros o transacciones
        - AgenteAccionPrecio: problemas con precios incorrectos en el catálogo
        - AgenteAccionStock: problemas con inventario o sincronización de stock
-       - Escalacion: si el problema no encaja en ninguno de los anteriores
-    4. Respondé ÚNICAMENTE con: DELEGAR_A: [nombre del agente elegido]
+    6. Si la KB no tiene solución aplicable, respondé con Escalacion.
+    7. Respondé ÚNICAMENTE con uno de estos formatos:
+       DELEGAR_A: [nombre del agente elegido] | TICKET: [INC1234] | KB: [id de artículo] | ACCION: [acción recomendada]
+       DELEGAR_A: Escalacion | TICKET: [INC1234] | MOTIVO: [por qué no se puede resolver con KB]
     
     No incluyas tags XML ni HTML. No agregues texto adicional.
     """);
