@@ -114,6 +114,9 @@ while (true)
         if (await TryHandleDeterministicAccessAsync(diagnostico))
             continue;
 
+        if (await TryHandleDeterministicPaymentAsync(diagnostico))
+            continue;
+
         if (diagnostico.Contains("AgenteAccionPedido", StringComparison.OrdinalIgnoreCase) ||
             diagnostico.Contains("pedido", StringComparison.OrdinalIgnoreCase))
         {
@@ -223,6 +226,50 @@ static async Task<bool> TryHandleDeterministicAccessAsync(string diagnostico)
     return true;
 }
 
+static async Task<bool> TryHandleDeterministicPaymentAsync(string diagnostico)
+{
+    if (!diagnostico.Contains("AgenteAccionPago", StringComparison.OrdinalIgnoreCase) &&
+        !diagnostico.Contains("consultar_pago", StringComparison.OrdinalIgnoreCase))
+    {
+        return false;
+    }
+
+    var email = ExtractEmail(diagnostico);
+    var ticketId = ExtractTicketNumber(diagnostico);
+
+    if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(ticketId))
+    {
+        Console.WriteLine("\n[SubagentePago] Faltan datos para consultar pagos. Necesito TICKET y USUARIO/email.\n");
+        return true;
+    }
+
+    Console.WriteLine("\n[AgenteAccion] Levantando subagente: PAGO");
+
+    var payment = await GetTurneraPaymentsAsync(email);
+    if (!payment.Ok)
+    {
+        Console.WriteLine($"\n[SubagentePago] No pude consultar pagos para {email}. Motivo: {payment.Message}\n");
+        return true;
+    }
+
+    var resolution = $"Pagos consultados para {email}. Pagos registrados: {payment.PaymentCount}. Creditos disponibles: {payment.Credits}.";
+    if (payment.PaymentCount == 0)
+    {
+        Console.WriteLine($"\n[SubagentePago] {resolution} No cierro el ticket porque no hay pagos registrados para validar la acreditacion.\n");
+        return true;
+    }
+
+    if (payment.Credits <= 0)
+    {
+        Console.WriteLine($"\n[SubagentePago] {resolution} No cierro el ticket porque el socio no tiene creditos disponibles; requiere acreditacion manual o una accion especifica de acreditacion.\n");
+        return true;
+    }
+
+    var closeResult = await CloseAgentAiTicketAsync(ticketId, resolution);
+    Console.WriteLine($"\n[SubagentePago] {resolution} {closeResult}\n");
+    return true;
+}
+
 static string? ExtractEmail(string text)
 {
     var match = Regex.Match(text, @"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", RegexOptions.IgnoreCase);
@@ -257,6 +304,45 @@ static async Task<ResetAccessResult> ResetTurneraAccessAsync(string email)
 
     var result = JsonSerializer.Deserialize<TurneraResetAccessResponse>(body, new JsonSerializerOptions(JsonSerializerDefaults.Web));
     return new ResetAccessResult(result?.Ok == true, result?.TempPassword, result?.Mensaje ?? "Respuesta invalida de Turnera.");
+}
+
+static async Task<PaymentQueryResult> GetTurneraPaymentsAsync(string email)
+{
+    var apiKey = Environment.GetEnvironmentVariable("AGENT_API_KEY");
+    if (string.IsNullOrWhiteSpace(apiKey))
+        return new PaymentQueryResult(false, 0, 0, "Falta AGENT_API_KEY.");
+
+    var baseUrl = Environment.GetEnvironmentVariable("TURNERA_API_URL") ?? "http://localhost:3000";
+    using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
+    using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/agent/pagos?email={Uri.EscapeDataString(email)}");
+    request.Headers.Add("x-api-key", apiKey);
+
+    using var response = await http.SendAsync(request);
+    var body = await response.Content.ReadAsStringAsync();
+
+    if (!response.IsSuccessStatusCode)
+        return new PaymentQueryResult(false, 0, 0, TryReadError(body));
+
+    using var document = JsonDocument.Parse(body);
+    var root = document.RootElement;
+    var payments = root.TryGetProperty("pagos", out var pagos) && pagos.ValueKind == JsonValueKind.Array
+        ? pagos.GetArrayLength()
+        : 0;
+    var credits = 0;
+    if (root.TryGetProperty("credits", out var creditElement))
+    {
+        if (creditElement.ValueKind == JsonValueKind.Number)
+        {
+            creditElement.TryGetInt32(out credits);
+        }
+        else if (creditElement.ValueKind == JsonValueKind.Object &&
+                 creditElement.TryGetProperty("availableClasses", out var availableClasses))
+        {
+            availableClasses.TryGetInt32(out credits);
+        }
+    }
+
+    return new PaymentQueryResult(true, payments, credits, "Pagos consultados.");
 }
 
 static async Task<string> CloseAgentAiTicketAsync(string ticketId, string resolution)
@@ -306,5 +392,6 @@ static string TryReadError(string body)
 }
 
 public sealed record ResetAccessResult(bool Ok, string? TempPassword, string? Message);
+public sealed record PaymentQueryResult(bool Ok, int PaymentCount, int Credits, string? Message);
 public sealed record TurneraResetAccessResponse(bool Ok, string? TempPassword, string? Mensaje);
 public sealed record AgentTicketResponse(int Id, string Number, string Description);
