@@ -251,6 +251,23 @@ public static partial class IntakeAnalyzer
                 SuggestedUserMessage: article.SuggestedUserMessage);
         }
 
+        if (action == "consultar_turno")
+        {
+            return new IntakeDecision(
+                Decision: "ejecutar_accion",
+                MissingField: null,
+                Question: null,
+                System: system,
+                ArticleCode: article.ArticleCode,
+                Confidence: article.Confidence,
+                Action: action,
+                Agent: "AgenteAccionTurno",
+                User: email,
+                Reason: null,
+                RecommendedAction: article.RecommendedAction,
+                SuggestedUserMessage: article.SuggestedUserMessage);
+        }
+
         return new IntakeDecision(
             Decision: "continuar",
             MissingField: null,
@@ -326,7 +343,11 @@ public static partial class IntakeAnalyzer
             normalized.Contains("cobro") ||
             normalized.Contains("cargo"))
             return "pagos";
-        if (normalized.Contains("turnera"))
+        if (normalized.Contains("turnera") ||
+            normalized.Contains("turno") ||
+            normalized.Contains("turno reservado") ||
+            normalized.Contains("ver mis turnos") ||
+            normalized.Contains("reserva"))
             return "turnera";
         if (normalized.Contains("usuario") ||
             normalized.Contains("login") ||
@@ -364,6 +385,10 @@ public static partial class IntakeAnalyzer
             text.Contains("pago") ||
             text.Contains("creditos"))
             return "consultar_pago";
+
+        if (text.Contains("consultar_turno") ||
+            text.Contains("turno"))
+            return "consultar_turno";
 
         return string.IsNullOrWhiteSpace(article.RecommendedAction) ? "resolver_con_kb" : article.RecommendedAction;
     }

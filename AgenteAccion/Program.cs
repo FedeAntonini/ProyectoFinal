@@ -117,6 +117,9 @@ while (true)
         if (await TryHandleDeterministicPaymentAsync(diagnostico))
             continue;
 
+        if (await TryHandleDeterministicTurnoAsync(diagnostico))
+            continue;
+
         if (diagnostico.Contains("AgenteAccionPedido", StringComparison.OrdinalIgnoreCase) ||
             diagnostico.Contains("pedido", StringComparison.OrdinalIgnoreCase))
         {
@@ -373,6 +376,26 @@ static async Task<string> CloseAgentAiTicketAsync(string ticketId, string resolu
         : $"No pude cerrar el ticket {ticketId}. API respondio {(int)response.StatusCode}.";
 }
 
+static string FormatDate(string date)
+{
+    if (!DateOnly.TryParse(date, out var d))
+        return date;
+
+    var dia = d.DayOfWeek switch
+    {
+        DayOfWeek.Monday    => "Lunes",
+        DayOfWeek.Tuesday   => "Martes",
+        DayOfWeek.Wednesday => "Miércoles",
+        DayOfWeek.Thursday  => "Jueves",
+        DayOfWeek.Friday    => "Viernes",
+        DayOfWeek.Saturday  => "Sábado",
+        DayOfWeek.Sunday    => "Domingo",
+        _                   => ""
+    };
+
+    return $"{dia} {d:dd/MM/yyyy}";
+}
+
 static string TryReadError(string body)
 {
     if (string.IsNullOrWhiteSpace(body))
@@ -391,7 +414,93 @@ static string TryReadError(string body)
     }
 }
 
+static async Task<bool> TryHandleDeterministicTurnoAsync(string diagnostico)
+{
+    if (!diagnostico.Contains("AgenteAccionTurno", StringComparison.OrdinalIgnoreCase) &&
+        !diagnostico.Contains("consultar_turno", StringComparison.OrdinalIgnoreCase))
+    {
+        return false;
+    }
+
+    var email = ExtractEmail(diagnostico);
+    var ticketId = ExtractTicketNumber(diagnostico);
+
+    if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(ticketId))
+    {
+        Console.WriteLine("\n[SubagenteTurno] Faltan datos para consultar turnos. Necesito TICKET y USUARIO/email.\n");
+        return true;
+    }
+
+    Console.WriteLine("\n[AgenteAccion] Levantando subagente: TURNO");
+
+    var turno = await GetTurneraTurnosAsync(email);
+    if (!turno.Ok)
+    {
+        Console.WriteLine($"\n[SubagenteTurno] No pude consultar turnos para {email}. Motivo: {turno.Message}\n");
+        return true;
+    }
+
+    string resolution;
+    if (turno.Turnos.Count == 0)
+    {
+        resolution = $"Turnos consultados para {email}. No hay turnos reservados activos.";
+    }
+    else
+    {
+        var detalle = string.Join("\n", turno.Turnos.Select((t, i) =>
+        {
+            var fecha = FormatDate(t.Date);
+            var extra = string.IsNullOrWhiteSpace(t.Teacher) ? "" : $" — {t.Teacher}" +
+                        (string.IsNullOrWhiteSpace(t.Specialty) ? "" : $" ({t.Specialty})");
+            return $"  {i + 1}. {fecha} a las {t.Time}{extra}";
+        }));
+        resolution = $"Turnos consultados para {email}. Turnos reservados: {turno.Turnos.Count}.\n{detalle}";
+    }
+
+    var closeResult = await CloseAgentAiTicketAsync(ticketId, resolution);
+    Console.WriteLine($"\n[SubagenteTurno] {resolution} {closeResult}\n");
+    return true;
+}
+
+static async Task<TurnoQueryResult> GetTurneraTurnosAsync(string email)
+{
+    var apiKey = Environment.GetEnvironmentVariable("AGENT_API_KEY");
+    if (string.IsNullOrWhiteSpace(apiKey))
+        return new TurnoQueryResult(false, [], "Falta AGENT_API_KEY.");
+
+    var baseUrl = Environment.GetEnvironmentVariable("TURNERA_API_URL") ?? "http://localhost:3000";
+    using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
+    using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/agent/turnos?email={Uri.EscapeDataString(email)}");
+    request.Headers.Add("x-api-key", apiKey);
+
+    using var response = await http.SendAsync(request);
+    var body = await response.Content.ReadAsStringAsync();
+
+    if (!response.IsSuccessStatusCode)
+        return new TurnoQueryResult(false, [], TryReadError(body));
+
+    using var document = JsonDocument.Parse(body);
+    var root = document.RootElement;
+
+    var turnos = new List<TurnoInfo>();
+    if (root.TryGetProperty("turnos", out var turnosEl) && turnosEl.ValueKind == JsonValueKind.Array)
+    {
+        foreach (var t in turnosEl.EnumerateArray())
+        {
+            var date = t.TryGetProperty("date", out var d) ? d.GetString() ?? "" : "";
+            var time = t.TryGetProperty("time", out var ti) ? ti.GetString() ?? "" : "";
+            var teacher = t.TryGetProperty("teacherName", out var tn) ? tn.GetString() ?? "" : "";
+            var specialty = t.TryGetProperty("specialty", out var sp) ? sp.GetString() ?? "" : "";
+            turnos.Add(new TurnoInfo(date, time, teacher, specialty));
+        }
+    }
+
+    return new TurnoQueryResult(true, turnos, "Turnos consultados.");
+}
+
 public sealed record ResetAccessResult(bool Ok, string? TempPassword, string? Message);
 public sealed record PaymentQueryResult(bool Ok, int PaymentCount, int Credits, string? Message);
+public sealed record TurnoQueryResult(bool Ok, List<TurnoInfo> Turnos, string? Message);
+public sealed record TurnoInfo(string Date, string Time, string Teacher, string Specialty);
 public sealed record TurneraResetAccessResponse(bool Ok, string? TempPassword, string? Mensaje);
 public sealed record AgentTicketResponse(int Id, string Number, string Description);
