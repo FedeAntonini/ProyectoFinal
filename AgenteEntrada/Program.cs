@@ -239,7 +239,7 @@ public static partial class IntakeAnalyzer
                 SuggestedUserMessage: article.SuggestedUserMessage);
         }
 
-        if (action == "consultar_turnos")
+        if (action == "consultar_turno")
         {
             return new IntakeDecision(
                 Decision: "ejecutar_accion",
@@ -249,24 +249,7 @@ public static partial class IntakeAnalyzer
                 ArticleCode: article.ArticleCode,
                 Confidence: article.Confidence,
                 Action: action,
-                Agent: "AgenteAccionTurnos",
-                User: email,
-                Reason: null,
-                RecommendedAction: article.RecommendedAction,
-                SuggestedUserMessage: article.SuggestedUserMessage);
-        }
-
-        if (action == "consultar_disponibilidad")
-        {
-            return new IntakeDecision(
-                Decision: "ejecutar_accion",
-                MissingField: null,
-                Question: null,
-                System: system,
-                ArticleCode: article.ArticleCode,
-                Confidence: article.Confidence,
-                Action: action,
-                Agent: "AgenteAccionDisponibilidad",
+                Agent: "AgenteAccionTurno",
                 User: email,
                 Reason: null,
                 RecommendedAction: article.RecommendedAction,
@@ -368,25 +351,14 @@ public static partial class IntakeAnalyzer
             normalized.Contains("cobro") ||
             normalized.Contains("cargo"))
             return "pagos";
-        if (normalized.Contains("profesor") ||
-            normalized.Contains("instructor"))
-            return "profesores";
-        if (normalized.Contains("cupo") ||
-            normalized.Contains("cupos") ||
-            normalized.Contains("completo") ||
-            normalized.Contains("disponibilidad") ||
-            normalized.Contains("lugares"))
-            return "disponibilidad";
-        if (normalized.Contains("turno") ||
-            normalized.Contains("turnera") ||
+        if (normalized.Contains("turnera") ||
+            normalized.Contains("turno") ||
+            normalized.Contains("turno reservado") ||
+            normalized.Contains("ver mis turnos") ||
             normalized.Contains("reserva"))
-            return "turnos";
-        if (normalized.Contains("clase") ||
-            normalized.Contains("horario") ||
-            normalized.Contains("agenda") ||
-            normalized.Contains("calendario"))
-            return "clases";
-        if (normalized.Contains("login") ||
+            return "turnera";
+        if (normalized.Contains("usuario") ||
+            normalized.Contains("login") ||
             normalized.Contains("sesion") ||
             normalized.Contains("credencial") ||
             normalized.Contains("contrasena") ||
@@ -460,20 +432,9 @@ public static partial class IntakeAnalyzer
             text.Contains("creditos"))
             return "consultar_pago";
 
-        if (text.Contains("consultar_turnos") ||
-            text.Contains("turno") ||
-            text.Contains("turnos") ||
-            text.Contains("reserva") ||
-            text.Contains("reservas"))
-            return "consultar_turnos";
-
-        if (text.Contains("consultar_disponibilidad") ||
-            text.Contains("disponibilidad") ||
-            text.Contains("profesor") ||
-            text.Contains("instructor") ||
-            text.Contains("cupo") ||
-            text.Contains("horario"))
-            return "consultar_disponibilidad";
+        if (text.Contains("consultar_turno") ||
+            text.Contains("turno"))
+            return "consultar_turno";
 
         return string.IsNullOrWhiteSpace(article.RecommendedAction) ? "resolver_con_kb" : article.RecommendedAction;
     }
