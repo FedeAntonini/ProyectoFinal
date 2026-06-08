@@ -239,7 +239,7 @@ public static partial class IntakeAnalyzer
                 SuggestedUserMessage: article.SuggestedUserMessage);
         }
 
-        if (action == "consultar_turnos")
+        if (action == "consultar_turno")
         {
             return new IntakeDecision(
                 Decision: "ejecutar_accion",
@@ -249,24 +249,7 @@ public static partial class IntakeAnalyzer
                 ArticleCode: article.ArticleCode,
                 Confidence: article.Confidence,
                 Action: action,
-                Agent: "AgenteAccionTurnos",
-                User: email,
-                Reason: null,
-                RecommendedAction: article.RecommendedAction,
-                SuggestedUserMessage: article.SuggestedUserMessage);
-        }
-
-        if (action == "consultar_disponibilidad")
-        {
-            return new IntakeDecision(
-                Decision: "ejecutar_accion",
-                MissingField: null,
-                Question: null,
-                System: system,
-                ArticleCode: article.ArticleCode,
-                Confidence: article.Confidence,
-                Action: action,
-                Agent: "AgenteAccionDisponibilidad",
+                Agent: "AgenteAccionTurno",
                 User: email,
                 Reason: null,
                 RecommendedAction: article.RecommendedAction,
@@ -385,7 +368,51 @@ public static partial class IntakeAnalyzer
             .ThenBy(item => item.Key)
             .FirstOrDefault();
 
-        return best.Value >= 6 ? best.Key : string.Empty;
+        if (normalized.Contains("pago") ||
+            normalized.Contains("pague") ||
+            normalized.Contains("pagaste") ||
+            normalized.Contains("abone") ||
+            normalized.Contains("abonado") ||
+            normalized.Contains("abono") ||
+            normalized.Contains("creditos") ||
+            normalized.Contains("credito") ||
+            normalized.Contains("me dieron") ||
+            normalized.Contains("me cargaron") ||
+            normalized.Contains("acreditaron") ||
+            normalized.Contains("acreditacion") ||
+            normalized.Contains("paquete") ||
+            normalized.Contains("tarjeta") ||
+            normalized.Contains("debito") ||
+            normalized.Contains("cobro") ||
+            normalized.Contains("cargo"))
+            return "pagos";
+        if (normalized.Contains("turnera") ||
+            normalized.Contains("turno") ||
+            normalized.Contains("turno reservado") ||
+            normalized.Contains("ver mis turnos") ||
+            normalized.Contains("reserva"))
+            return "turnera";
+        if (normalized.Contains("usuario") ||
+            normalized.Contains("login") ||
+            normalized.Contains("sesion") ||
+            normalized.Contains("credencial") ||
+            normalized.Contains("contrasena") ||
+            normalized.Contains("password") ||
+            normalized.Contains("acceso"))
+            return "acceso";
+        if (normalized.Contains("socio") ||
+            normalized.Contains("usuario") ||
+            normalized.Contains("perfil") ||
+            normalized.Contains("registrado"))
+            return "socios";
+        if (normalized.Contains("pedido") || normalized.Contains("ord-"))
+            return "pedidos";
+        if (normalized.Contains("catalogo") || normalized.Contains("precio"))
+            return "catalogo";
+        if (normalized.Contains("stock") || normalized.Contains("inventario"))
+            return "stock";
+
+        return string.Empty;
     }
 
     private static string SelectSystem(string text, AgentCaseMemory.Match? memoryMatch)
@@ -457,20 +484,9 @@ public static partial class IntakeAnalyzer
             text.Contains("creditos"))
             return "consultar_pago";
 
-        if (text.Contains("consultar_turnos") ||
-            text.Contains("turno") ||
-            text.Contains("turnos") ||
-            text.Contains("reserva") ||
-            text.Contains("reservas"))
-            return "consultar_turnos";
-
-        if (text.Contains("consultar_disponibilidad") ||
-            text.Contains("disponibilidad") ||
-            text.Contains("profesor") ||
-            text.Contains("instructor") ||
-            text.Contains("cupo") ||
-            text.Contains("horario"))
-            return "consultar_disponibilidad";
+        if (text.Contains("consultar_turno") ||
+            text.Contains("turno"))
+            return "consultar_turno";
 
         return string.IsNullOrWhiteSpace(article.RecommendedAction) ? "resolver_con_kb" : article.RecommendedAction;
     }
