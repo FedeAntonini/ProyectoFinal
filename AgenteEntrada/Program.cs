@@ -182,7 +182,7 @@ public static partial class IntakeAnalyzer
             return Ask(
                 request,
                 "email",
-                $"Encontre el ticket {request.Number}. Para operar sobre tu usuario de la turnera, decime el email con el que estas registrado.",
+                BuildMissingEmailQuestion(request.Number, article),
                 system,
                 article);
         }
@@ -332,6 +332,41 @@ public static partial class IntakeAnalyzer
     private static string InferSystem(string text)
     {
         var normalized = Normalize(text);
+        var scores = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["acceso"] = Score(normalized,
+                ("credenciales invalidas", 16), ("credencial", 12), ("login", 12), ("iniciar sesion", 12),
+                ("sesion", 10), ("password", 10), ("contrasena", 10), ("acceso", 9), ("bloquead", 8)),
+            ["pagos"] = Score(normalized,
+                ("pago", 12), ("pague", 14), ("pagaste", 14), ("abone", 14), ("abonado", 10),
+                ("abono", 10), ("creditos", 12), ("credito", 10), ("me dieron", 12), ("me cargaron", 12),
+                ("menos clases", 12), ("dieron menos", 12), ("acreditaron", 10), ("acreditacion", 10), ("paquete", 9), ("tarjeta", 7),
+                ("debito", 7), ("cobro", 9), ("cargo", 9)),
+            ["profesores"] = Score(normalized,
+                ("profesor", 10), ("instructor", 10), ("docente", 8)),
+            ["disponibilidad"] = Score(normalized,
+                ("disponibilidad", 12), ("cupo", 10), ("cupos", 10), ("completo", 9),
+                ("lugares", 9), ("sin lugar", 10)),
+            ["turnos"] = Score(normalized,
+                ("reserva", 10), ("reservas", 10), ("turno", 10), ("turnos", 10),
+                ("confirmacion", 6), ("no aparece", 6), ("turnera", 1)),
+            ["clases"] = Score(normalized,
+                ("clase", 7), ("clases", 7), ("horario", 8), ("agenda", 8), ("calendario", 8)),
+            ["socios"] = Score(normalized,
+                ("socio", 8), ("usuario", 5), ("perfil", 8), ("registrado", 6)),
+            ["pedidos"] = Score(normalized,
+                ("pedido", 10), ("ord-", 10)),
+            ["catalogo"] = Score(normalized,
+                ("catalogo", 10), ("precio", 10)),
+            ["stock"] = Score(normalized,
+                ("stock", 10), ("inventario", 10))
+        };
+
+        var best = scores
+            .Where(item => item.Value > 0)
+            .OrderByDescending(item => item.Value)
+            .ThenBy(item => item.Key)
+            .FirstOrDefault();
 
         if (normalized.Contains("pago") ||
             normalized.Contains("pague") ||
@@ -410,6 +445,9 @@ public static partial class IntakeAnalyzer
     private static bool ContainsAny(string text, params string[] values)
         => values.Any(text.Contains);
 
+    private static int Score(string text, params (string Token, int Weight)[] weightedTokens)
+        => weightedTokens.Where(item => text.Contains(item.Token)).Sum(item => item.Weight);
+
     private static bool RequiresEmail(KnowledgeBaseSearchResult article)
     {
         var text = Normalize($"{article.RequiredData} {article.Preconditions} {article.RecommendedAction}");
@@ -417,6 +455,20 @@ public static partial class IntakeAnalyzer
             return false;
 
         return text.Contains("email") || text.Contains("usuario") || text.Contains("socio");
+    }
+
+    private static string BuildMissingEmailQuestion(string ticketNumber, KnowledgeBaseSearchResult article)
+    {
+        var text = Normalize($"{article.Actions} {article.RecommendedAction} {article.System} {article.Tags}");
+        var operation = text switch
+        {
+            var value when value.Contains("pago") || value.Contains("credito") => "consultar tus pagos y creditos",
+            var value when value.Contains("turno") || value.Contains("reserva") => "consultar tus turnos",
+            var value when value.Contains("acceso") || value.Contains("resetear") => "operar sobre tu usuario de la turnera",
+            _ => "continuar con la accion automatica"
+        };
+
+        return $"Encontre el ticket {ticketNumber}. Para {operation}, decime el email con el que estas registrado.";
     }
 
     private static string InferAction(KnowledgeBaseSearchResult article)
@@ -590,7 +642,15 @@ public static partial class IntakeAnalyzer
             "tarjeta robada",
             "accedio sin permiso",
             "accedieron sin permiso",
+            "alguien entro a mi cuenta",
+            "entraron a mi cuenta",
+            "ingresaron a mi cuenta",
+            "ingreso a mi cuenta",
+            "sin autorizacion",
+            "sin mi autorizacion",
             "cuenta comprometida",
+            "cuenta hackeada",
+            "me hackearon",
             "hackearon",
             "suplantacion",
             "datos sensibles",
