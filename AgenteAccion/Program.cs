@@ -178,7 +178,7 @@ while (true)
         }
         else
         {
-            Console.WriteLine("\n[AgenteAccion] No se encontra subagente. Escalando a nivel 2.\n");
+            Console.WriteLine("\n[AgenteAccion] No se encontro subagente. Escalando a nivel 2.\n");
         }
     }
     catch (Exception ex)
@@ -441,19 +441,7 @@ static async Task<PaymentQueryResult> GetTurneraPaymentsAsync(string email)
     var payments = root.TryGetProperty("pagos", out var pagos) && pagos.ValueKind == JsonValueKind.Array
         ? pagos.GetArrayLength()
         : 0;
-    var credits = 0;
-    if (root.TryGetProperty("credits", out var creditElement))
-    {
-        if (creditElement.ValueKind == JsonValueKind.Number)
-        {
-            creditElement.TryGetInt32(out credits);
-        }
-        else if (creditElement.ValueKind == JsonValueKind.Object &&
-                 creditElement.TryGetProperty("availableClasses", out var availableClasses))
-        {
-            availableClasses.TryGetInt32(out credits);
-        }
-    }
+    var credits = ReadAvailableCredits(root);
 
     return new PaymentQueryResult(true, payments, credits, "Pagos consultados.");
 }
@@ -480,11 +468,30 @@ static async Task<TurnsQueryResult> GetTurneraTurnsAsync(string email)
     var bookings = root.TryGetProperty("turnos", out var turnos) && turnos.ValueKind == JsonValueKind.Array
         ? turnos.GetArrayLength()
         : 0;
-    var credits = root.TryGetProperty("credits", out var creditElement) && creditElement.TryGetInt32(out var creditValue)
-        ? creditValue
-        : 0;
+    var credits = ReadAvailableCredits(root);
 
     return new TurnsQueryResult(true, bookings, credits, "Turnos consultados.");
+}
+
+static int ReadAvailableCredits(JsonElement root)
+{
+    if (!root.TryGetProperty("credits", out var creditElement))
+        return 0;
+
+    if (creditElement.ValueKind == JsonValueKind.Number &&
+        creditElement.TryGetInt32(out var creditValue))
+    {
+        return creditValue;
+    }
+
+    if (creditElement.ValueKind == JsonValueKind.Object &&
+        creditElement.TryGetProperty("availableClasses", out var availableClasses) &&
+        availableClasses.TryGetInt32(out var availableValue))
+    {
+        return availableValue;
+    }
+
+    return 0;
 }
 
 static async Task<AvailabilityQueryResult> GetTurneraAvailabilityAsync(string teacherId, string date, string time)
