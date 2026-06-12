@@ -1,5 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
@@ -8,7 +8,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.AddConsole(options =>
 {
@@ -17,10 +17,14 @@ builder.Logging.AddConsole(options =>
 
 builder.Services
     .AddMcpServer()
-    .WithStdioServerTransport()
+    .WithHttpTransport(options => options.Stateless = true)
     .WithToolsFromAssembly();
 
-await builder.Build().RunAsync();
+var app = builder.Build();
+
+app.MapMcp("/mcp");
+
+await app.RunAsync();
 
 
 // ============================================================
