@@ -20,6 +20,7 @@ builder.Services
     .WithHttpTransport(options => options.Stateless = true)
     .WithToolsFromAssembly();
 
+
 var app = builder.Build();
 
 app.MapMcp("/mcp");
@@ -81,6 +82,37 @@ public static class ToolsEnrutador
             return $"Ticket {ticketId} no encontrado.";
 
         return $"Ticket {ticket.Number}: {JsonSerializer.Serialize(ticket, AgentAiApi.JsonOptions)}";
+    }
+
+    [McpServerTool, Description("Actualiza el sistema afectado de un ticket según el diagnóstico del enrutador.")]
+    public static async Task<string> ActualizarSistemaAfectado(
+        [Description("Número del ticket, por ejemplo: INC0010081")]
+        string ticketId,
+        [Description("Sistema afectado: acceso, reserva, pago, notificacion, escalacion")]
+        string sistemaAfectado)
+    {
+        var ticket = await AgentAiApi.GetTicketByNumberAsync(ticketId);
+
+        if (ticket is null)
+            return $"Ticket {ticketId} no encontrado.";
+
+        var request = new UpdateTicketRequest(
+            Title: null,
+            Description: null,
+            State: null,
+            StateLabel: null,
+            Priority: null,
+            PriorityLabel: null,
+            AssignedTo: null,
+            AssignmentGroup: null,
+            ResolvedAt: null,
+            AffectedSystem: sistemaAfectado.ToLower());
+
+        using var response = await AgentAiApi.Http.PutAsJsonAsync(
+            $"/tickets/{ticket.Id}", request, AgentAiApi.JsonOptions);
+        response.EnsureSuccessStatusCode();
+
+        return $"AffectedSystem del ticket {ticketId} actualizado a '{sistemaAfectado}'.";
     }
 
     [McpServerTool, Description("Analiza el problema del ticket y determina qué agente de acción debe resolverlo.")]
@@ -277,7 +309,7 @@ public static class AgentAiApi
 {
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private static readonly HttpClient Http = new()
+    public static readonly HttpClient Http = new()
     {
         BaseAddress = new Uri(Environment.GetEnvironmentVariable("AGENTAI_API_URL") ?? "http://localhost:5038")
     };
@@ -319,7 +351,8 @@ public static class AgentAiApi
             PriorityLabel: null,
             AssignedTo: null,
             AssignmentGroup: null,
-            ResolvedAt: DateTime.UtcNow);
+            ResolvedAt: DateTime.UtcNow,
+            AffectedSystem: area.ToLower());
 
         using var response = await Http.PutAsJsonAsync($"/tickets/{ticket.Id}", request, JsonOptions);
         response.EnsureSuccessStatusCode();
@@ -343,7 +376,8 @@ public static class AgentAiApi
             PriorityLabel: ticket.Priority <= 2 ? ticket.PriorityLabel : "High",
             AssignedTo: null,
             AssignmentGroup: "Nivel 2",
-            ResolvedAt: null);
+            ResolvedAt: null,
+            AffectedSystem: null);
 
         using var response = await Http.PutAsJsonAsync($"/tickets/{ticket.Id}", request, JsonOptions);
         response.EnsureSuccessStatusCode();
@@ -623,7 +657,8 @@ public record UpdateTicketRequest(
     string? PriorityLabel,
     string? AssignedTo,
     string? AssignmentGroup,
-    DateTime? ResolvedAt);
+    DateTime? ResolvedAt,
+    string? AffectedSystem);
 
 public record TicketResponse(
     int Id,

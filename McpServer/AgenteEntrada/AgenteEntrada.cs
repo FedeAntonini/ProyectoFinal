@@ -16,14 +16,18 @@ public class AgenteEntrada
     private static readonly string SystemPrompt = 
     new AgentPromptLoader().Load("entrada.md");
 
+    private readonly OutboundQueueService _outboundQueue;
+
     public AgenteEntrada(
         ILogger<AgenteEntrada> logger,
         LlmGateway gateway,
-        IConfiguration config)
+        IConfiguration config,
+        OutboundQueueService outboundQueue)
     {
         _logger = logger;
         _gateway = gateway;
         _config = config;
+        _outboundQueue = outboundQueue;
     }
 
     public async Task<EntradaResult> ProcessAsync(InboundMessage message, CancellationToken ct = default)

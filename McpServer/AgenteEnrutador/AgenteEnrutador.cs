@@ -3,6 +3,7 @@ using McpServer.Services;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using McpServer.MessageQueue;
 
 namespace McpServer.Agentes;
 
@@ -12,22 +13,8 @@ public class AgenteEnrutador
     private readonly IConfiguration _config;
     private readonly ILogger<AgenteEnrutador> _logger;
 
-    private const string SystemPrompt = """
-        Sos el Agente Enrutador de un sistema de soporte nivel 1 para un estudio de pilates.
-        
-        Cuando recibas los datos de un ticket:
-        1. Analizá el problema y el sistema afectado
-        2. Decidí cuál de estos agentes es el más adecuado para resolverlo:
-           - AgenteAccionReserva: problemas con reservas de turnos (no puede reservar, turno no aparece, quiere cancelar o cambiar horario)
-           - AgenteAccionAcceso: problemas de login o acceso a la plataforma
-           - AgenteAccionPago: problemas con cobros, pagos o facturación de clases
-           - AgenteAccionNotificacion: no recibió confirmación o notificación de un turno
-           - Escalacion: si el problema no encaja en ninguno de los anteriores
-        3. Respondé ÚNICAMENTE con un JSON en este formato:
-           {"agente": "NombreDelAgente", "motivo": "explicación breve de por qué elegiste ese agente"}
-        
-        No uses bloques de código ni backticks. Solo el JSON, sin texto adicional.
-        """;
+    private static readonly string SystemPrompt = 
+        new AgentPromptLoader().Load("enrutador.md");
 
     public AgenteEnrutador(
         LlmGateway llmGateway,
@@ -89,6 +76,19 @@ public class AgenteEnrutador
 
         return await McpClient.CreateAsync(transport, cancellationToken: ct);
     }
+
+    public async Task ProcessAsync(InboundMessage message, CancellationToken ct = default)
+{
+    if (!int.TryParse(message.TicketId, out var ticketId))
+    {
+        _logger.LogWarning("TicketId inválido: {TicketId}", message.TicketId);
+        return;
+    }
+
+    // Usar el agentRunId del mensaje o crear uno nuevo
+    var agentRunId = 1; // TODO: extraer del mensaje cuando esté disponible
+    await ProcesarAsync(ticketId, agentRunId, ct);
+}
 
     private record EnrutadorDecision(string Agente, string Motivo);
 }
