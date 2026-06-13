@@ -7,6 +7,8 @@ using System.Globalization;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using McpServer.Api;
+using McpServer.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +22,8 @@ builder.Services
     .WithHttpTransport(options => options.Stateless = true)
     .WithToolsFromAssembly();
 
+builder.Services.AddApiServices(builder.Configuration);
+builder.Services.AddLlmServices(builder.Configuration);
 
 var app = builder.Build();
 
