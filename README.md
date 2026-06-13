@@ -1,30 +1,30 @@
-# Agente IA de Soporte Nivel 1 — E-Commerce
+# Agente IA de Soporte Nivel 1 — Turnera de Pilates
 
-Sistema multiagente de soporte técnico nivel 1 construido con .NET, MCP (Model Context Protocol) y Groq (LLaMA 3.3).
+Sistema multiagente de soporte técnico nivel 1 construido con .NET, MCP (Model Context Protocol) y Groq (LLaMA).
 
 ---
 
 ## Arquitectura
 
 ```
-AgenteEntrada    → Recolecta datos del usuario y registra el incidente
-AgenteEnrutador  → Lee el ticket, diagnostica y decide qué agente invocar
-AgenteAccion     → Recibe el diagnóstico y levanta el subagente correcto
-McpServer        → Expone las tools que usan los agentes
+McpServer           → Servidor HTTP que expone las tools que usan los agentes
+AgenteEntrada       → Recolecta datos del usuario y registra el incidente
+AgenteEnrutador     → Consulta la KB, diagnostica y decide qué agente invocar
+AgenteConversacion  → Gestiona la conversación con el usuario via Telegram
 ```
 
 Flujo completo:
 
 ```
-Usuario reporta problema
+Usuario manda mensaje al bot de Telegram
         ↓
-AgenteEntrada recolecta: descripción, sistema, tipo de error, email
+AgenteEntrada recolecta: descripción, módulo afectado, email
         ↓
-AgenteEnrutador lee el ticket y decide: DELEGAR_A: [agente]
+AgenteEnrutador consulta la KB y decide el agente de acción
         ↓
-AgenteAccion levanta el subagente correcto
+Agente de acción ejecuta la solución en la turnera
         ↓
-Subagente ejecuta la acción y cierra el ticket
+AgenteEntrada notifica al usuario el resultado
 ```
 
 ---
@@ -33,20 +33,17 @@ Subagente ejecuta la acción y cierra el ticket
 
 ```
 ProyectoFinal/
-├── McpServer/          → MCP Server con todas las tools
-├── AgenteEntrada/      → Recolecta datos del incidente
-├── AgenteEnrutador/    → Diagnostica y deriva
-├── AgenteAccion/       → Levanta el subagente correcto
-└── ProyectoFinal.slnx  → Solución .NET
+├── McpServer/              → Servidor MCP HTTP con tools y agentes
+│   ├── AgenteEntrada/      → Agente de recolección de datos
+│   ├── AgenteEnrutador/    → Agente de diagnóstico y routing
+│   ├── AgenteConversacion/ → Agente de conversación con Telegram
+│   ├── Tools/              → Tools que llaman a la API y la turnera
+│   ├── Api/                → Servicios que conectan con la API del backend
+│   └── MessageQueue/       → Integración con AWS SQS
+├── KnowledgeBase/          → Artículos de KB en formato .md
+├── Prompts/                → System prompts de cada agente en formato .md
+└── AgentMemory/            → Memoria de casos procesados por agente
 ```
-
-## Ramas
-
-- `main` — código estable mergeado
-- `agente-entrada` — desarrollo del Agente de Entrada
-- `agente-enrutador` — desarrollo del Agente Enrutador
-- `agente-accion` — desarrollo del Agente de Acción
-- `mcp-server` — desarrollo del MCP Server
 
 ---
 
@@ -57,106 +54,95 @@ ProyectoFinal/
 
 ---
 
-## Configuración
-
-Configurá la variable de entorno antes de correr cualquier agente:
+## Configuración — Variables de entorno
 
 ```bash
 setx GROQ_API_KEY "tu_api_key_de_groq"
+setx AGENTAI_API_URL "url_de_la_api_del_backend"
+setx TURNERA_API_URL "url_de_la_api_de_la_turnera"
+setx AGENT_API_KEY "api_key_de_la_turnera"
 ```
 
-Cerrá y abrí la terminal para que tome efecto. Verificá:
+## Configuración — User Secrets (McpServer)
 
 ```bash
-echo %GROQ_API_KEY%
+cd McpServer
+dotnet user-secrets set "Groq:ApiKey" "tu_api_key_de_groq"
+dotnet user-secrets set "Groq:Modelo" "llama-3.1-8b-instant"
+dotnet user-secrets set "Api:BaseUrl" "url_de_la_api_del_backend"
+dotnet user-secrets set "Api:Username" "tu_email_registrado_en_la_api"
+dotnet user-secrets set "Api:Password" "tu_password"
+dotnet user-secrets set "Telegram:BotToken" "token_del_bot"
+dotnet user-secrets set "Telegram:DefaultChatId" "chat_id_de_prueba"
+dotnet user-secrets set "ServiceNow:BaseUrl" "url_de_servicenow"
+dotnet user-secrets set "ServiceNow:ClientId" "client_id_de_servicenow"
+dotnet user-secrets set "ServiceNow:ClientSecret" "client_secret_de_servicenow"
+dotnet user-secrets set "ServiceNow:Username" "usuario_de_servicenow"
+dotnet user-secrets set "ServiceNow:Password" "password_de_servicenow"
 ```
 
 ---
 
-## Cómo probar
+## Registrar usuario en la API
 
-### Paso 1 — AgenteEntrada
-
-```bash
-cd AgenteEntrada
-dotnet run
-```
-
-Simulá un usuario reportando un problema. El agente va a hacer preguntas hasta tener toda la información y registrar el incidente. Ejemplo:
-
-```
-Usuario: No puedo iniciar sesión
-Agente:  ¿Qué sistema estás usando?
-Usuario: El sistema de usuarios
-Agente:  ¿Qué tipo de error es?
-Usuario: Un dato incorrecto
-Agente:  ¿Cuál es tu email?
-Usuario: test@empresa.com
-Agente:  Tu incidente fue registrado con el ID: INC1234
-```
-
-### Paso 2 — AgenteEnrutador
-
-Abrí otra terminal:
+La API usa autenticación JWT con AWS Cognito. Para registrarte:
 
 ```bash
-cd AgenteEnrutador
-dotnet run
-```
+# 1. Crear cuenta (usá un email real o de tempmail)
+curl -X POST "URL_API/auth/sign-up" -H "Content-Type: application/json" -d "{\"email\":\"TU_EMAIL\",\"password\":\"TuPassword1!\"}"
 
-Ingresá un ticket conocido (INC0001 a INC0005):
-
-```
-Input: Tengo el ticket INC0002
-[Enrutador] DELEGAR_A: AgenteAccionPedido
-```
-
-### Paso 3 — AgenteAccion
-
-Abrí otra terminal:
-
-```bash
-cd AgenteAccion
-dotnet run
-```
-
-Pegá el diagnóstico del Enrutador:
-
-```
-Diagnóstico: DELEGAR_A: AgenteAccionPedido
-[AgenteAccion] Levantando subagente: PEDIDO
-[SubagentePedido] Su pedido ORD-5521 está en preparación...
+# 2. Confirmar con el código que llega al email
+curl -X POST "URL_API/auth/confirm" -H "Content-Type: application/json" -d "{\"email\":\"TU_EMAIL\",\"code\":\"CODIGO\"}"
 ```
 
 ---
 
-## Tickets de prueba disponibles
+## Levantar el McpServer localmente
 
-| ID | Usuario | Problema | Sistema |
+```bash
+cd McpServer
+dotnet run
+```
+
+Ver las tools disponibles:
+
+```bash
+curl -X POST "http://localhost:PUERTO/mcp" -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}"
+```
+
+---
+
+## Bot de Telegram
+
+El sistema usa un bot de Telegram como canal de comunicación con el usuario. Para probar el flujo completo mandá el número de ticket directamente al bot:
+
+```
+INC0010081
+```
+
+El bot va a pedir información adicional y resolver el problema automáticamente.
+
+---
+
+## API del backend
+
+| Endpoint | Método | Auth | Descripción |
 |---|---|---|---|
-| INC0001 | juan.perez@empresa.com | No puede iniciar sesión | usuarios |
-| INC0002 | maria.gomez@empresa.com | Pedido ORD-5521 pendiente | pedidos |
-| INC0003 | carlos.ruiz@empresa.com | Pago rechazado con débito | pagos |
-| INC0004 | laura.diaz@empresa.com | Precio incorrecto SKU-8821 | catalogo |
-| INC0005 | admin@empresa.com | Stock SKU-3310 no sincronizado | stock |
+| `/health/live` | GET | No | Confirma que la app está levantada |
+| `/health/ready` | GET | No | Confirma conexión con la BD |
+| `/auth/sign-up` | POST | No | Registrar usuario |
+| `/auth/confirm` | POST | No | Confirmar cuenta con código |
+| `/auth/sign-in` | POST | No | Obtener JWT |
+| `/tickets` | GET | Sí | Listar tickets |
+| `/tickets/{id}` | GET | Sí | Obtener ticket por ID |
+| `/tickets/by-number/{number}` | GET | Sí | Obtener ticket por número |
+| `/tickets` | POST | Sí | Crear ticket |
+| `/tickets/{id}` | PUT | Sí | Actualizar ticket |
 
 ---
 
-## Subagentes implementados
+## Base de datos
 
-| Subagente | Problema | Estado |
-|---|---|---|
-| SubagentePedido | Consulta estado de pedido | ✅ Funcionando |
-| SubagenteAcceso | Resetea acceso de usuario | 🔜 Pendiente conexión BD |
-| SubagentePago | Consulta pago rechazado | 🔜 Pendiente conexión BD |
-| SubagentePrecio | Corrige precio en catálogo | 🔜 Pendiente conexión BD |
-| SubagenteStock | Sincroniza stock | 🔜 Pendiente conexión BD |
+La KB está en archivos `.md` en la carpeta `KnowledgeBase/`. Cada archivo corresponde a un módulo del sistema de pilates.
 
----
-
-## Notas
-
-- El modelo de IA usado es `llama-3.3-70b-versatile` de Groq.
-- Groq free tier tiene límite de requests por minuto. Si el agente se cuelga, esperá 1-2 minutos.
-- Los datos de tickets y pedidos son hardcodeados. Se reemplazarán por consultas a la BD real cuando el backend tenga los endpoints listos.
-- Para agregar un nuevo subagente: agregar sus tools al McpServer, filtrarlas en AgenteAccion y agregar su system prompt.
+Los prompts de cada agente están en la carpeta `Prompts/` y se cargan automáticamente al arrancar.
