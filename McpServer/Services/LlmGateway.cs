@@ -25,7 +25,7 @@ public class LlmGateway
     {
         var inputSnapshot = string.Join("\n", messages.Select(m => $"{m.Role}: {m.Text}"));
 
-        var step = await CreateAgentStepAsync(mcpClient, agentRunId, agentType, inputSnapshot, ct);
+        var step = await CreateAgentStepAsync(mcpClient, agentRunId, agentType, inputSnapshot, systemPrompt, ct);
 
         var response = await _llm.CompleteAsync(systemPrompt, messages, ct);
 
@@ -47,6 +47,7 @@ public class LlmGateway
         int agentRunId,
         string agentType,
         string inputData,
+        string prompt,
         CancellationToken ct)
     {
         var result = await mcpClient.CallToolAsync(
@@ -55,7 +56,8 @@ public class LlmGateway
             {
                 ["agentRunId"] = agentRunId,
                 ["agentType"] = agentType,
-                ["inputData"] = inputData
+                ["inputData"] = inputData,
+                ["prompt"] = prompt,
             },
             cancellationToken: ct);
 
