@@ -1,4 +1,8 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using McpServer.MessageQueue;
+using McpServer.Agentes;
+using McpServer.Services;
+using McpServer.Api;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
@@ -7,8 +11,9 @@ using System.Globalization;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.AddConsole(options =>
 {
@@ -17,10 +22,54 @@ builder.Logging.AddConsole(options =>
 
 builder.Services
     .AddMcpServer()
-    .WithStdioServerTransport()
+    .WithHttpTransport()
     .WithToolsFromAssembly();
 
-await builder.Build().RunAsync();
+builder.Services.AddScoped<AgenteEntrada>();
+builder.Services.AddScoped<AgenteConversacion>();
+builder.Services.AddLlmServices(builder.Configuration);
+builder.Services.AddApiServices(builder.Configuration);
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+});
+
+
+if (!builder.Environment.IsDevelopment())
+{
+    builder.Services.AddMessageQueues(builder.Configuration);
+    builder.Services.AddHostedService<QueueWorker>();
+}
+
+
+var app = builder.Build();
+
+app.MapMcp("/mcp");
+
+app.MapGet("/debug/tools", () =>
+{
+    var assembly = typeof(Program).Assembly;
+
+    var tools = assembly
+        .GetTypes()
+        .Where(t => t.GetCustomAttributes(typeof(McpServerToolTypeAttribute), true).Any())
+        .Select(t => new
+        {
+            ToolType = t.FullName,
+            Methods = t.GetMethods()
+                .Where(m => m.GetCustomAttributes(typeof(McpServerToolAttribute), true).Any())
+                .Select(m => new
+                {
+                    Method = m.Name,
+                    ReturnType = m.ReturnType.FullName
+                })
+        });
+
+    return Results.Json(tools);
+});
+
+app.Run();
 
 
 // ============================================================
