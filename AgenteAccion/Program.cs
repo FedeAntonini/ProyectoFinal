@@ -246,7 +246,10 @@ static async Task<bool> TryHandleDeterministicPaymentAsync(string diagnostico)
         return true;
     }
 
-    var resolution = $"Pagos consultados para {email}. Pagos registrados: {payment.PaymentCount}. Creditos disponibles: {payment.Credits}.";
+    var creditsDetail = payment.TotalPaid > 0
+        ? $"{payment.Credits} ({payment.TotalPaid} pagadas − {payment.TotalBooked} reservadas)"
+        : payment.Credits.ToString();
+    var resolution = $"Pagos consultados para {email}. Pagos registrados: {payment.PaymentCount}. Creditos disponibles: {creditsDetail}.";
     if (payment.PaymentCount == 0)
     {
         Console.WriteLine($"\n[SubagentePago] {resolution} No cierro el ticket porque no hay pagos registrados para validar la acreditacion.\n");
@@ -342,7 +345,7 @@ static async Task<PaymentQueryResult> GetTurneraPaymentsAsync(string email)
 {
     var apiKey = Environment.GetEnvironmentVariable("AGENT_API_KEY");
     if (string.IsNullOrWhiteSpace(apiKey))
-        return new PaymentQueryResult(false, 0, 0, "Falta AGENT_API_KEY.");
+        return new PaymentQueryResult(false, 0, 0, 0, 0, "Falta AGENT_API_KEY.");
 
     var baseUrl = Environment.GetEnvironmentVariable("TURNERA_API_URL") ?? "http://localhost:3000";
     using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
@@ -353,7 +356,7 @@ static async Task<PaymentQueryResult> GetTurneraPaymentsAsync(string email)
     var body = await response.Content.ReadAsStringAsync();
 
     if (!response.IsSuccessStatusCode)
-        return new PaymentQueryResult(false, 0, 0, TryReadError(body));
+        return new PaymentQueryResult(false, 0, 0, 0, 0, TryReadError(body));
 
     using var document = JsonDocument.Parse(body);
     var root = document.RootElement;
@@ -361,8 +364,10 @@ static async Task<PaymentQueryResult> GetTurneraPaymentsAsync(string email)
         ? pagos.GetArrayLength()
         : 0;
     var credits = ReadAvailableCredits(root);
+    var totalPaid = ReadCreditField(root, "totalPaidClasses");
+    var totalBooked = ReadCreditField(root, "totalBookedClasses");
 
-    return new PaymentQueryResult(true, payments, credits, "Pagos consultados.");
+    return new PaymentQueryResult(true, payments, credits, totalPaid, totalBooked, "Pagos consultados.");
 }
 
 
@@ -382,6 +387,21 @@ static int ReadAvailableCredits(JsonElement root)
         availableClasses.TryGetInt32(out var availableValue))
     {
         return availableValue;
+    }
+
+    return 0;
+}
+
+static int ReadCreditField(JsonElement root, string fieldName)
+{
+    if (!root.TryGetProperty("credits", out var creditElement))
+        return 0;
+
+    if (creditElement.ValueKind == JsonValueKind.Object &&
+        creditElement.TryGetProperty(fieldName, out var field) &&
+        field.TryGetInt32(out var value))
+    {
+        return value;
     }
 
     return 0;
@@ -530,7 +550,7 @@ static async Task<string> CloseAgentAiTicketAsync(string ticketId, string resolu
 }
 
 public sealed record ResetAccessResult(bool Ok, string? TempPassword, string? Message);
-public sealed record PaymentQueryResult(bool Ok, int PaymentCount, int Credits, string? Message);
+public sealed record PaymentQueryResult(bool Ok, int PaymentCount, int Credits, int TotalPaid, int TotalBooked, string? Message);
 public sealed record TurnoQueryResult(bool Ok, List<TurnoInfo> Turnos, string? Message);
 public sealed record TurnoInfo(string Date, string Time, string Teacher, string Specialty);
 public sealed record TurneraResetAccessResponse(bool Ok, string? TempPassword, string? Mensaje);
