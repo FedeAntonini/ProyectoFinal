@@ -88,37 +88,6 @@ public static class ToolsEnrutador
         return $"Ticket {ticket.Number}: {JsonSerializer.Serialize(ticket, AgentAiApi.JsonOptions)}";
     }
 
-    [McpServerTool, Description("Actualiza el sistema afectado de un ticket según el diagnóstico del enrutador.")]
-    public static async Task<string> ActualizarSistemaAfectado(
-        [Description("Número del ticket, por ejemplo: INC0010081")]
-        string ticketId,
-        [Description("Sistema afectado: acceso, reserva, pago, notificacion, escalacion")]
-        string sistemaAfectado)
-    {
-        var ticket = await AgentAiApi.GetTicketByNumberAsync(ticketId);
-
-        if (ticket is null)
-            return $"Ticket {ticketId} no encontrado.";
-
-        var request = new UpdateTicketRequest(
-            Title: null,
-            Description: null,
-            State: null,
-            StateLabel: null,
-            Priority: null,
-            PriorityLabel: null,
-            AssignedTo: null,
-            AssignmentGroup: null,
-            ResolvedAt: null,
-            AffectedSystem: sistemaAfectado.ToLower());
-
-        using var response = await AgentAiApi.Http.PutAsJsonAsync(
-            $"/tickets/{ticket.Id}", request, AgentAiApi.JsonOptions);
-        response.EnsureSuccessStatusCode();
-
-        return $"AffectedSystem del ticket {ticketId} actualizado a '{sistemaAfectado}'.";
-    }
-
     [McpServerTool, Description("Analiza el problema del ticket y determina qué agente de acción debe resolverlo.")]
     public static string DiagnosticarProblema(
         [Description("Descripción del problema")]

@@ -22,4 +22,17 @@ public class TicketService : ITicketService
 
         return await response.Content.ReadFromJsonAsync<TicketResponse>(ct);
     }
+
+    public async Task<TicketResponse?> UpdateTicketAsync(int ticketId, UpdateTicketRequest request, CancellationToken ct = default)
+{
+    var response = await _http.PutAsJsonAsync($"/tickets/{ticketId}", request, ct);
+
+    if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        return null;
+
+    response.EnsureSuccessStatusCode();
+
+    // El endpoint devuelve 204 No Content, no hay body para parsear
+    return await GetTicketAsync(ticketId, ct);
+}
 }
