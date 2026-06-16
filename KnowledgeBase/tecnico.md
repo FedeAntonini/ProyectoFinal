@@ -17,7 +17,7 @@ Cuando escalar:
 ## KB-TECNICO-001 - Error tecnico o de interfaz en la app
 Sistema: tecnico
 Confianza: alta
-Tags: boton, funciona, falla, error, pantalla, cancelar, cancelacion, interfaz, tecnico, sistema, click, responde, carga, bug, problema tecnico, no puedo, no me deja, intento, intente
+Tags: boton, funciona, falla, error, pantalla, cancelar, cancelacion, interfaz, tecnico, sistema, click, responde, carga, bug, problema tecnico, no puedo, no me deja, intento, intente, turnera
 Acciones: escalar_ticket
 Descripcion: El socio no puede realizar una accion en la app de la turnera por un error tecnico o de interfaz.
 Sintomas: El boton no funciona, no me deja cancelar, la pantalla da error, la app no responde, el sistema falla, no puedo hacer click, intente cancelar pero no pude, error al intentar realizar una accion en la app.
