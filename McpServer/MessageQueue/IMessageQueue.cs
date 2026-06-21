@@ -1,4 +1,6 @@
-﻿public interface IMessageQueue
+﻿namespace McpServer.MessageQueue;
+
+public interface IMessageQueue
 {
     Task<IReadOnlyList<QueueMessage>> ReceiveMessagesAsync(int maxMessages, CancellationToken ct);
     Task SendMessageAsync(string body, CancellationToken ct);
