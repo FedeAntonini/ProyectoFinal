@@ -12,6 +12,7 @@ public class AgenteEnrutador
     private readonly LlmGateway _llmGateway;
     private readonly IConfiguration _config;
     private readonly ILogger<AgenteEnrutador> _logger;
+    private readonly OutboundQueueService _outboundQueue;
 
     private static readonly string SystemPrompt = 
         new AgentPromptLoader().Load("enrutador.md");
@@ -19,11 +20,13 @@ public class AgenteEnrutador
     public AgenteEnrutador(
         LlmGateway llmGateway,
         IConfiguration config,
-        ILogger<AgenteEnrutador> logger)
+        ILogger<AgenteEnrutador> logger,
+        OutboundQueueService outboundQueue)
     {
         _llmGateway = llmGateway;
         _config = config;
         _logger = logger;
+        _outboundQueue = outboundQueue;
     }
 
     public async Task<EnrutadorResult> ProcesarAsync(int ticketId, int agentRunId, CancellationToken ct = default)
@@ -74,7 +77,21 @@ public class AgenteEnrutador
 
     _logger.LogInformation("AffectedSystem '{Sistema}' seteado para ticket {TicketId}", sistemaAfectado, ticketId);
 
-    return new EnrutadorResult(ticketId, decision.Agente, decision.Motivo);
+    var resultado = new EnrutadorResult(ticketId, decision.Agente, decision.Motivo);
+
+    // Encolar TicketParaEjecutar para que AgenteAccion tome la decision
+    await _outboundQueue.SendAsync(new OutboundMessage(
+        TicketId: ticketId.ToString(),
+        CorrelationId: Guid.NewGuid().ToString(),
+        CustomerId: string.Empty,
+        Action: InboundAction.TicketParaEjecutar,
+        Payload: JsonSerializer.Serialize(resultado),
+        TargetAgent: nameof(AgenteAccion)
+    ), ct);
+
+    _logger.LogInformation("TicketParaEjecutar encolado para ticket {TicketId}", ticketId);
+
+    return resultado;
     }
 
     private static string MapearAgenteASistema(string agente) => agente switch
@@ -107,10 +124,32 @@ public class AgenteEnrutador
         return;
     }
 
-    // Usar el agentRunId del mensaje o crear uno nuevo
-    var agentRunId = 1; // TODO: extraer del mensaje cuando esté disponible
+    await using var mcpClient = await CreateMcpClientAsync(ct);
+    var agentRunId = await CreateAgentRunAsync(mcpClient, ticketId, ct);
+
     await ProcesarAsync(ticketId, agentRunId, ct);
 }
+
+private async Task<int> CreateAgentRunAsync(McpClient client, int ticketId, CancellationToken ct)
+{
+    var result = await client.CallToolAsync(
+        "create_agent_run",
+        new Dictionary<string, object?> { ["ticketId"] = ticketId },
+        cancellationToken: ct);
+
+    var text = result.Content
+        .OfType<TextContentBlock>()
+        .FirstOrDefault()?.Text
+        ?? throw new InvalidOperationException("create_agent_run returned no text content.");
+
+    var run = JsonSerializer.Deserialize<AgentRunResult>(text,
+        new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+        ?? throw new InvalidOperationException("Failed to deserialize agent run.");
+
+    return run.Id;
+}
+
+private record AgentRunResult(int Id, int TicketId, string Status, DateTime StartedAt, DateTime? EndedAt);
 
     private record EnrutadorDecision(string Agente, string Motivo);
 }
