@@ -9,6 +9,8 @@ using System.Text;
 using System.Text.Json;
 using McpServer.Api;
 using McpServer.Services;
+using McpServer.MessageQueue;
+using McpServer.Agentes;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,10 +26,29 @@ builder.Services
 
 builder.Services.AddApiServices(builder.Configuration);
 builder.Services.AddLlmServices(builder.Configuration);
+builder.Services.AddKeyedSingleton<IMessageQueue>("outbound", (sp, _) => new NullMessageQueue());
+builder.Services.AddScoped<McpServer.MessageQueue.OutboundQueueService>();
+builder.Services.AddScoped<AgenteEnrutador>();
+builder.Services.AddScoped<AgenteAccion>();
 
 var app = builder.Build();
 
 app.MapMcp("/mcp");
+
+app.MapPost("/debug/ejecutar-flujo/{ticketId:int}", async (
+    int ticketId,
+    AgenteEnrutador enrutador,
+    CancellationToken ct) =>
+{
+    await enrutador.ProcessAsync(new InboundMessage(
+        TicketId: ticketId.ToString(),
+        CorrelationId: Guid.NewGuid().ToString(),
+        CustomerId: string.Empty,
+        Action: InboundAction.TicketParaEnrutar,
+        Payload: null), ct);
+
+    return Results.Ok(new { Mensaje = $"Enrutador ejecutado para ticket {ticketId}. Revisar AffectedSystem en la BD." });
+});
 
 await app.RunAsync();
 
@@ -396,6 +417,18 @@ public static class AgentAiApi
 
         return article.Confidence is "alta" or "media" ? "resolver_con_kb" : "escalar_nivel2";
     }
+}
+
+public class NullMessageQueue : IMessageQueue
+{
+    public Task<IReadOnlyList<QueueMessage>> ReceiveMessagesAsync(int maxMessages, CancellationToken ct)
+        => Task.FromResult<IReadOnlyList<QueueMessage>>(new List<QueueMessage>());
+
+    public Task SendMessageAsync(string body, CancellationToken ct)
+        => Task.CompletedTask;
+
+    public Task DeleteMessageAsync(string receiptHandle, CancellationToken ct)
+        => Task.CompletedTask;
 }
 
 public static class MarkdownKnowledgeBase
