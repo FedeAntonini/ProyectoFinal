@@ -4,6 +4,7 @@ using McpServer.Api.Auth;
 using McpServer.Api.Conversations;
 using McpServer.Api.Messages;
 using McpServer.Api.Tickets;
+using McpServer.Api.Turnera;
 
 namespace McpServer.Api;
 
@@ -33,6 +34,14 @@ public static class ApiModule
                 .AddHttpMessageHandler<AuthHandler>();
 
         services.AddHttpClient<IAuthService, AuthService>(c => c.BaseAddress = new Uri(baseUrl));
+
+        services.AddTransient<McpServer.Api.Turnera.TurneraApiKeyHandler>();
+
+                var turneraBaseUrl = config["Turnera:ApiUrl"] ?? throw new Exception("Missing Turnera:ApiUrl");
+        
+        services.AddHttpClient<McpServer.Api.Turnera.ITurneraService, McpServer.Api.Turnera.TurneraService>(
+                c => c.BaseAddress = new Uri(turneraBaseUrl))
+                .AddHttpMessageHandler<McpServer.Api.Turnera.TurneraApiKeyHandler>();
 
         return services;
     }
