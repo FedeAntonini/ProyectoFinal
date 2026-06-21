@@ -50,6 +50,26 @@ app.MapPost("/debug/ejecutar-flujo/{ticketId:int}", async (
     return Results.Ok(new { Mensaje = $"Enrutador ejecutado para ticket {ticketId}. Revisar AffectedSystem en la BD." });
 });
 
+app.MapPost("/debug/probar-accion/{ticketId:int}/{agente}", async (
+    int ticketId,
+    string agente,
+    AgenteAccion accion,
+    CancellationToken ct) =>
+{
+    var decision = new EnrutadorResult(ticketId, agente, "Prueba manual sin pasar por el enrutador real");
+
+    var message = new InboundMessage(
+        TicketId: ticketId.ToString(),
+        CorrelationId: Guid.NewGuid().ToString(),
+        CustomerId: string.Empty,
+        Action: InboundAction.TicketParaEjecutar,
+        Payload: JsonSerializer.Serialize(decision));
+
+    var resultado = await accion.ProcessAsync(message, ct);
+
+    return Results.Ok(resultado);
+});
+
 await app.RunAsync();
 
 
