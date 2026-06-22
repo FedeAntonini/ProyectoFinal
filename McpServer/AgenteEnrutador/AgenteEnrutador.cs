@@ -96,11 +96,11 @@ public class AgenteEnrutador
 
     private static string MapearAgenteASistema(string agente) => agente switch
     {
-    "AgenteAccionReserva" => "reserva",
-    "AgenteAccionAcceso" => "acceso",
-    "AgenteAccionPago" => "pago",
-    "AgenteAccionNotificacion" => "notificacion",
-    _ => "escalacion"
+        "AgenteAccionAcceso" => "acceso",
+        "AgenteAccionPago" => "pago",
+        "AgenteAccionTurnos" => "turnos",
+        "AgenteAccionDisponibilidad" => "disponibilidad",
+        _ => "escalacion"
     };
 
     private async Task<McpClient> CreateMcpClientAsync(CancellationToken ct)

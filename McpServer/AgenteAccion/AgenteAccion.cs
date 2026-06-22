@@ -50,8 +50,8 @@ public class AgenteAccion
         {
             "AgenteAccionAcceso" => await EjecutarAccesoAsync(ticket, ct),
             "AgenteAccionPago" => await EjecutarPagoAsync(ticket, ct),
-            "AgenteAccionReserva" => await EjecutarTurnoAsync(ticket, ct),
-            "AgenteAccionNotificacion" => await EjecutarTurnoAsync(ticket, ct),
+            "AgenteAccionTurnos" => await EjecutarTurnoAsync(ticket, ct),
+            "AgenteAccionDisponibilidad" => await EjecutarDisponibilidadAsync(ticket, ct),
             _ => await EjecutarEscalacionAsync(ticket, decision.Motivo, ct)
         };
     }
@@ -167,6 +167,22 @@ public class AgenteAccion
         await CerrarTicketAsync(ticket, resolucion, ct);
 
         return AccionResult.Resuelto(ticket.Number, resolucion);
+    }
+
+    private async Task<AccionResult> EjecutarDisponibilidadAsync(TicketResponse ticket, CancellationToken ct)
+    {
+        var email = ticket.CreatedByEmail;
+
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            _logger.LogWarning("Ticket {TicketId} sin email asociado, no puedo consultar disponibilidad", ticket.Number);
+            return AccionResult.PendienteDatos(ticket.Number, "Falta el email del socio para consultar disponibilidad.");
+        }
+
+        // Endpoint de disponibilidad pendiente de confirmar con el equipo
+        // Por ahora escala hasta que esté implementado en la turnera
+        _logger.LogWarning("SubagenteDisponibilidad no implementado aun, escalando ticket {TicketId}", ticket.Number);
+        return await EjecutarEscalacionAsync(ticket, "Consulta de disponibilidad no implementada aún en la turnera.", ct);
     }
 
     private async Task<AccionResult> EjecutarEscalacionAsync(TicketResponse ticket, string motivo, CancellationToken ct)
