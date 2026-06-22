@@ -3,5 +3,6 @@
 public record CreateAgentStepRequest(
     int AgentRunId,
     string AgentType,
-    string InputData
+    string InputData,
+    string Prompt
 );

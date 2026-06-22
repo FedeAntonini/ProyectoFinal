@@ -23,10 +23,13 @@ public class AgentStepTools
         string agentType,
         [Description("The input data for this step, typically the prompt or message being processed")]
         string inputData,
+        [Description("The prompt sent with the request")]
+        string prompt,
+
         CancellationToken ct = default)
     {
         return await _agentStepService.CreateAsync(
-            new CreateAgentStepRequest(agentRunId, agentType, inputData), ct);
+            new CreateAgentStepRequest(agentRunId, agentType, inputData, prompt), ct);
     }
 
     [McpServerTool, Description("Updates an existing agent step with its result status and output data.")]

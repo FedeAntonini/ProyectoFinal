@@ -43,23 +43,23 @@ public class LlmGateway
     }
 
     private async Task<AgentStepResult> CreateAgentStepAsync(
-    McpClient mcpClient,
-    int agentRunId,
-    string agentType,
-    string inputData,
-    string prompt,
-    CancellationToken ct)
-{
-    var result = await mcpClient.CallToolAsync(
-        "create_agent_step",
-        new Dictionary<string, object?>
-        {
-            ["agentRunId"] = agentRunId,
-            ["agentType"] = agentType,
-            ["inputData"] = inputData,
-            ["prompt"] = prompt
-        },
-        cancellationToken: ct);
+        McpClient mcpClient,
+        int agentRunId,
+        string agentType,
+        string inputData,
+        string prompt,
+        CancellationToken ct)
+    {
+        var result = await mcpClient.CallToolAsync(
+            "create_agent_step",
+            new Dictionary<string, object?>
+            {
+                ["agentRunId"] = agentRunId,
+                ["agentType"] = agentType,
+                ["inputData"] = inputData,
+                ["prompt"] = prompt
+            },
+            cancellationToken: ct);
 
         var text = result.Content
             .OfType<TextContentBlock>()
