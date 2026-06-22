@@ -359,7 +359,11 @@ public static partial class IntakeAnalyzer
             ["catalogo"] = Score(normalized,
                 ("catalogo", 10), ("precio", 10)),
             ["stock"] = Score(normalized,
-                ("stock", 10), ("inventario", 10))
+                ("stock", 10), ("inventario", 10)),
+            ["tecnico"] = Score(normalized,
+                ("boton no funciona", 20), ("no funciona", 14), ("boton", 12), ("pantalla", 10),
+                ("error tecnico", 14), ("bug", 10), ("no me deja", 12), ("no puedo cancelar", 14),
+                ("no carga", 10), ("no responde", 12), ("falla el sistema", 14), ("falla", 8))
         };
 
         var best = scores
@@ -367,6 +371,13 @@ public static partial class IntakeAnalyzer
             .OrderByDescending(item => item.Value)
             .ThenBy(item => item.Key)
             .FirstOrDefault();
+
+        if (normalized.Contains("boton no funciona") ||
+            normalized.Contains("no me deja cancelar") ||
+            normalized.Contains("no puedo cancelar") ||
+            (normalized.Contains("boton") && normalized.Contains("funciona")) ||
+            (normalized.Contains("pantalla") && normalized.Contains("error")))
+            return "tecnico";
 
         if (normalized.Contains("pago") ||
             normalized.Contains("pague") ||

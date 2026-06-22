@@ -246,7 +246,10 @@ static async Task<bool> TryHandleDeterministicPaymentAsync(string diagnostico)
         return true;
     }
 
-    var resolution = $"Pagos consultados para {email}. Pagos registrados: {payment.PaymentCount}. Creditos disponibles: {payment.Credits}.";
+    var creditsDetail = payment.TotalPaid > 0
+        ? $"{payment.Credits} ({payment.TotalPaid} pagadas − {payment.TotalBooked} reservadas)"
+        : payment.Credits.ToString();
+    var resolution = $"Pagos consultados para {email}. Pagos registrados: {payment.PaymentCount}. Creditos disponibles: {creditsDetail}.";
     if (payment.PaymentCount == 0)
     {
         Console.WriteLine($"\n[SubagentePago] {resolution} No cierro el ticket porque no hay pagos registrados para validar la acreditacion.\n");
@@ -263,84 +266,6 @@ static async Task<bool> TryHandleDeterministicPaymentAsync(string diagnostico)
     return true;
 }
 
-static async Task<bool> TryHandleDeterministicTurnsAsync(string diagnostico)
-{
-    if (!diagnostico.Contains("AgenteAccionTurnos", StringComparison.OrdinalIgnoreCase) &&
-        !diagnostico.Contains("consultar_turnos", StringComparison.OrdinalIgnoreCase))
-    {
-        return false;
-    }
-
-    var email = ExtractEmail(diagnostico);
-    var ticketId = ExtractTicketNumber(diagnostico);
-
-    if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(ticketId))
-    {
-        Console.WriteLine("\n[SubagenteTurnos] Faltan datos para consultar turnos. Necesito TICKET y USUARIO/email.\n");
-        AgentActionMemory.Save(ticketId, "turnos", "SubagenteTurnos", "no_resueltos", diagnostico, "Faltan datos para consultar turnos.", "consultar_turnos");
-        return true;
-    }
-
-    Console.WriteLine("\n[AgenteAccion] Levantando subagente: TURNOS");
-
-    var turns = await GetTurneraTurnsAsync(email);
-    if (!turns.Ok)
-    {
-        Console.WriteLine($"\n[SubagenteTurnos] No pude consultar turnos para {email}. Motivo: {turns.Message}\n");
-        AgentActionMemory.Save(ticketId, "turnos", "SubagenteTurnos", "no_resueltos", diagnostico, turns.Message, "consultar_turnos");
-        return true;
-    }
-
-    var resolution = $"Turnos consultados para {email}. Reservas registradas: {turns.BookingCount}. Creditos disponibles: {turns.Credits}.";
-    if (turns.BookingCount == 0)
-    {
-        Console.WriteLine($"\n[SubagenteTurnos] {resolution} No encontre reservas registradas; requiere seguimiento o correccion manual si el usuario tenia confirmacion.\n");
-        AgentActionMemory.Save(ticketId, "turnos", "SubagenteTurnos", "no_resueltos", diagnostico, $"{resolution} Sin reservas registradas.", "consultar_turnos");
-        return true;
-    }
-
-    Console.WriteLine($"\n[SubagenteTurnos] {resolution} No cierro el ticket; queda pendiente de confirmacion del usuario.\n");
-    AgentActionMemory.Save(ticketId, "turnos", "SubagenteTurnos", "resueltos", diagnostico, resolution, "consultar_turnos");
-    return true;
-}
-
-static async Task<bool> TryHandleDeterministicAvailabilityAsync(string diagnostico)
-{
-    if (!diagnostico.Contains("AgenteAccionDisponibilidad", StringComparison.OrdinalIgnoreCase) &&
-        !diagnostico.Contains("consultar_disponibilidad", StringComparison.OrdinalIgnoreCase))
-    {
-        return false;
-    }
-
-    Console.WriteLine("\n[AgenteAccion] Levantando subagente: DISPONIBILIDAD");
-
-    var teacher = ExtractTeacher(diagnostico);
-    var date = ExtractDate(diagnostico);
-    var time = ExtractTime(diagnostico);
-
-    if (teacher is null || string.IsNullOrWhiteSpace(date) || string.IsNullOrWhiteSpace(time))
-    {
-        Console.WriteLine("\n[SubagenteDisponibilidad] Faltan datos para consultar disponibilidad. Necesito profesor (Valentina, Martin o Camila), fecha YYYY-MM-DD y horario HH:mm.\n");
-        return true;
-    }
-
-    var availability = await GetTurneraAvailabilityAsync(teacher.Value.Id, date, time);
-    if (!availability.Ok)
-    {
-        Console.WriteLine($"\n[SubagenteDisponibilidad] No pude consultar disponibilidad para {teacher.Value.Name} el {date} a las {time}. Motivo: {availability.Message}\n");
-        return true;
-    }
-
-    var resolution = $"Disponibilidad consultada para {teacher.Value.Name} el {date} a las {time}. Ocupados: {availability.Occupied}. Capacidad: {availability.Capacity}. Disponibles: {availability.Available}.";
-    if (!availability.IsAvailable)
-    {
-        Console.WriteLine($"\n[SubagenteDisponibilidad] {resolution} No hay cupos disponibles; requiere seguimiento o alternativa.\n");
-        return true;
-    }
-
-    Console.WriteLine($"\n[SubagenteDisponibilidad] {resolution} El profesor tiene disponibilidad en ese horario. No cierro el ticket; queda pendiente de confirmacion del usuario.\n");
-    return true;
-}
 
 static string? ExtractEmail(string text)
 {
@@ -420,7 +345,7 @@ static async Task<PaymentQueryResult> GetTurneraPaymentsAsync(string email)
 {
     var apiKey = Environment.GetEnvironmentVariable("AGENT_API_KEY");
     if (string.IsNullOrWhiteSpace(apiKey))
-        return new PaymentQueryResult(false, 0, 0, "Falta AGENT_API_KEY.");
+        return new PaymentQueryResult(false, 0, 0, 0, 0, "Falta AGENT_API_KEY.");
 
     var baseUrl = Environment.GetEnvironmentVariable("TURNERA_API_URL") ?? "http://localhost:3000";
     using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
@@ -431,7 +356,7 @@ static async Task<PaymentQueryResult> GetTurneraPaymentsAsync(string email)
     var body = await response.Content.ReadAsStringAsync();
 
     if (!response.IsSuccessStatusCode)
-        return new PaymentQueryResult(false, 0, 0, TryReadError(body));
+        return new PaymentQueryResult(false, 0, 0, 0, 0, TryReadError(body));
 
     using var document = JsonDocument.Parse(body);
     var root = document.RootElement;
@@ -439,36 +364,12 @@ static async Task<PaymentQueryResult> GetTurneraPaymentsAsync(string email)
         ? pagos.GetArrayLength()
         : 0;
     var credits = ReadAvailableCredits(root);
+    var totalPaid = ReadCreditField(root, "totalPaidClasses");
+    var totalBooked = ReadCreditField(root, "totalBookedClasses");
 
-    return new PaymentQueryResult(true, payments, credits, "Pagos consultados.");
+    return new PaymentQueryResult(true, payments, credits, totalPaid, totalBooked, "Pagos consultados.");
 }
 
-static async Task<TurnsQueryResult> GetTurneraTurnsAsync(string email)
-{
-    var apiKey = Environment.GetEnvironmentVariable("AGENT_API_KEY");
-    if (string.IsNullOrWhiteSpace(apiKey))
-        return new TurnsQueryResult(false, 0, 0, "Falta AGENT_API_KEY.");
-
-    var baseUrl = Environment.GetEnvironmentVariable("TURNERA_API_URL") ?? "http://localhost:3000";
-    using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
-    using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/agent/turnos?email={Uri.EscapeDataString(email)}");
-    request.Headers.Add("x-api-key", apiKey);
-
-    using var response = await http.SendAsync(request);
-    var body = await response.Content.ReadAsStringAsync();
-
-    if (!response.IsSuccessStatusCode)
-        return new TurnsQueryResult(false, 0, 0, TryReadError(body));
-
-    using var document = JsonDocument.Parse(body);
-    var root = document.RootElement;
-    var bookings = root.TryGetProperty("turnos", out var turnos) && turnos.ValueKind == JsonValueKind.Array
-        ? turnos.GetArrayLength()
-        : 0;
-    var credits = ReadAvailableCredits(root);
-
-    return new TurnsQueryResult(true, bookings, credits, "Turnos consultados.");
-}
 
 static int ReadAvailableCredits(JsonElement root)
 {
@@ -491,33 +392,21 @@ static int ReadAvailableCredits(JsonElement root)
     return 0;
 }
 
-static async Task<AvailabilityQueryResult> GetTurneraAvailabilityAsync(string teacherId, string date, string time)
+static int ReadCreditField(JsonElement root, string fieldName)
 {
-    var apiKey = Environment.GetEnvironmentVariable("AGENT_API_KEY");
-    if (string.IsNullOrWhiteSpace(apiKey))
-        return new AvailabilityQueryResult(false, 0, 0, 0, false, "Falta AGENT_API_KEY.");
+    if (!root.TryGetProperty("credits", out var creditElement))
+        return 0;
 
-    var baseUrl = Environment.GetEnvironmentVariable("TURNERA_API_URL") ?? "http://localhost:3000";
-    using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
-    var url = $"/api/agent/disponibilidad?teacherId={Uri.EscapeDataString(teacherId)}&date={Uri.EscapeDataString(date)}&time={Uri.EscapeDataString(time)}";
-    using var request = new HttpRequestMessage(HttpMethod.Get, url);
-    request.Headers.Add("x-api-key", apiKey);
+    if (creditElement.ValueKind == JsonValueKind.Object &&
+        creditElement.TryGetProperty(fieldName, out var field) &&
+        field.TryGetInt32(out var value))
+    {
+        return value;
+    }
 
-    using var response = await http.SendAsync(request);
-    var body = await response.Content.ReadAsStringAsync();
-
-    if (!response.IsSuccessStatusCode)
-        return new AvailabilityQueryResult(false, 0, 0, 0, false, TryReadError(body));
-
-    using var document = JsonDocument.Parse(body);
-    var root = document.RootElement;
-    var occupied = root.TryGetProperty("ocupados", out var occupiedElement) && occupiedElement.TryGetInt32(out var occupiedValue) ? occupiedValue : 0;
-    var capacity = root.TryGetProperty("capacidad", out var capacityElement) && capacityElement.TryGetInt32(out var capacityValue) ? capacityValue : 0;
-    var available = root.TryGetProperty("disponibles", out var availableElement) && availableElement.TryGetInt32(out var availableValue) ? availableValue : Math.Max(capacity - occupied, 0);
-    var isAvailable = root.TryGetProperty("disponible", out var isAvailableElement) && isAvailableElement.ValueKind == JsonValueKind.True;
-
-    return new AvailabilityQueryResult(true, occupied, capacity, available, isAvailable, "Disponibilidad consultada.");
+    return 0;
 }
+
 
 static string FormatDate(string date)
 {
@@ -641,10 +530,61 @@ static async Task<TurnoQueryResult> GetTurneraTurnosAsync(string email)
     return new TurnoQueryResult(true, turnos, "Turnos consultados.");
 }
 
+static async Task<string> CloseAgentAiTicketAsync(string ticketId, string resolution)
+{
+    var baseUrl = Environment.GetEnvironmentVariable("AGENTAI_API_URL") ?? "http://localhost:5038";
+    using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
+
+    using var getResponse = await http.GetAsync($"/tickets/by-number/{Uri.EscapeDataString(ticketId.ToUpperInvariant())}");
+    if (!getResponse.IsSuccessStatusCode)
+        return $"No pude encontrar el ticket {ticketId}.";
+
+    var ticket = await getResponse.Content.ReadFromJsonAsync<JsonElement>();
+    var id = ticket.GetProperty("id").GetInt32();
+
+    var request = new { description = resolution, state = 4, stateLabel = "Resolved", resolvedAt = DateTime.UtcNow };
+    using var putResponse = await http.PutAsJsonAsync($"/tickets/{id}", request);
+    return putResponse.IsSuccessStatusCode
+        ? $"Ticket {ticketId} cerrado exitosamente."
+        : $"No pude cerrar el ticket {ticketId}.";
+}
+
 public sealed record ResetAccessResult(bool Ok, string? TempPassword, string? Message);
-public sealed record PaymentQueryResult(bool Ok, int PaymentCount, int Credits, string? Message);
+public sealed record PaymentQueryResult(bool Ok, int PaymentCount, int Credits, int TotalPaid, int TotalBooked, string? Message);
 public sealed record TurnoQueryResult(bool Ok, List<TurnoInfo> Turnos, string? Message);
 public sealed record TurnoInfo(string Date, string Time, string Teacher, string Specialty);
 public sealed record TurneraResetAccessResponse(bool Ok, string? TempPassword, string? Mensaje);
+
+public sealed class AgentPromptLoader
+{
+    private readonly string _promptsPath;
+
+    public AgentPromptLoader()
+    {
+        var configured = Environment.GetEnvironmentVariable("AGENTAI_PROMPTS_PATH");
+        if (!string.IsNullOrWhiteSpace(configured) && Directory.Exists(configured))
+        {
+            _promptsPath = configured;
+            return;
+        }
+
+        var candidates = new[]
+        {
+            Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "Prompts")),
+            Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "Prompts")),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Prompts")),
+        };
+
+        _promptsPath = candidates.FirstOrDefault(Directory.Exists) ?? Directory.GetCurrentDirectory();
+    }
+
+    public string Load(string fileName)
+    {
+        var path = Path.Combine(_promptsPath, fileName);
+        return File.Exists(path)
+            ? File.ReadAllText(path)
+            : "Eres un agente de soporte especializado. Resuelve el problema del usuario usando las tools disponibles.";
+    }
+}
 
 

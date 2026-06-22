@@ -57,7 +57,7 @@ public class LlmGateway
                 ["agentRunId"] = agentRunId,
                 ["agentType"] = agentType,
                 ["inputData"] = inputData,
-                ["prompt"] = prompt
+                ["prompt"] = prompt,
             },
             cancellationToken: ct);
 

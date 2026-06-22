@@ -1,5 +1,9 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.AspNetCore.Builder;
+using McpServer.MessageQueue;
+using McpServer.Agentes;
+using McpServer.Services;
+using McpServer.Api;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
@@ -7,10 +11,7 @@ using System.Globalization;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
-using McpServer.Api;
-using McpServer.Services;
-using McpServer.MessageQueue;
-using McpServer.Agentes;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,16 +25,52 @@ builder.Services
     .WithHttpTransport(options => options.Stateless = true)
     .WithToolsFromAssembly();
 
-builder.Services.AddApiServices(builder.Configuration);
-builder.Services.AddLlmServices(builder.Configuration);
-builder.Services.AddKeyedSingleton<IMessageQueue>("outbound", (sp, _) => new NullMessageQueue());
-builder.Services.AddScoped<McpServer.MessageQueue.OutboundQueueService>();
+builder.Services.AddScoped<AgenteEntrada>();
+builder.Services.AddScoped<AgenteConversacion>();
 builder.Services.AddScoped<AgenteEnrutador>();
 builder.Services.AddScoped<AgenteAccion>();
+builder.Services.AddLlmServices(builder.Configuration);
+builder.Services.AddApiServices(builder.Configuration);
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+});
+
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddKeyedSingleton<IMessageQueue>("outbound", (sp, _) => new NullMessageQueue());
+    builder.Services.AddScoped<McpServer.MessageQueue.OutboundQueueService>();
+}
+else
+{
+    builder.Services.AddMessageQueues(builder.Configuration);
+    builder.Services.AddHostedService<QueueWorker>();
+}
 
 var app = builder.Build();
 
 app.MapMcp("/mcp");
+
+app.MapGet("/debug/tools", () =>
+{
+    var assembly = typeof(Program).Assembly;
+    var tools = assembly
+        .GetTypes()
+        .Where(t => t.GetCustomAttributes(typeof(McpServerToolTypeAttribute), true).Any())
+        .Select(t => new
+        {
+            ToolType = t.FullName,
+            Methods = t.GetMethods()
+                .Where(m => m.GetCustomAttributes(typeof(McpServerToolAttribute), true).Any())
+                .Select(m => new
+                {
+                    Method = m.Name,
+                    ReturnType = m.ReturnType.FullName
+                })
+        });
+    return Results.Json(tools);
+});
 
 app.MapPost("/debug/ejecutar-flujo/{ticketId:int}", async (
     int ticketId,
@@ -72,6 +109,7 @@ app.MapPost("/debug/probar-accion/{ticketId:int}/{agente}", async (
 
 await app.RunAsync();
 
+app.Run();
 
 // ============================================================
 // TOOLS DEL AGENTE ENTRADA
@@ -360,7 +398,7 @@ public static class AgentAiApi
             Title: null,
             Description: $"{ticket.Description}\n\nResolución: {resolution}",
             State: 4,
-            StateLabel: "Resolved",
+            StateLabel: "Resuelto",
             Priority: null,
             PriorityLabel: null,
             AssignedTo: null,
@@ -385,7 +423,7 @@ public static class AgentAiApi
             Title: null,
             Description: $"{ticket.Description}\n\nEscalación N2: {reason}",
             State: 2,
-            StateLabel: "In Progress - Escalated",
+            StateLabel: "En proceso Nivel 2",
             Priority: ticket.Priority <= 2 ? ticket.Priority : 2,
             PriorityLabel: ticket.Priority <= 2 ? ticket.PriorityLabel : "High",
             AssignedTo: null,

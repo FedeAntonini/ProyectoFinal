@@ -16,6 +16,7 @@ Modulos disponibles:
 - disponibilidad: cupos, turno completo, lugares disponibles.
 - socios: usuario/socio registrado, email, perfil, datos de cuenta.
 - clases: clase u horario no visible, agenda, calendario.
+- tecnico: boton que no funciona, error de interfaz, pantalla con falla, accion que no se puede completar, bug en la app.
 
 Criterios generales de pasamanos:
 - Si el ticket esta resuelto, cerrado, cancelado o derivado a segundo nivel, solo informar estado.
