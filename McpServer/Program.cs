@@ -1,4 +1,4 @@
-﻿using McpServer.MessageQueue;
+using McpServer.MessageQueue;
 using McpServer.Agentes;
 using McpServer.Services;
 using McpServer.Api;
@@ -22,11 +22,13 @@ builder.Logging.AddConsole(options =>
 
 builder.Services
     .AddMcpServer()
-    .WithHttpTransport()
+    .WithHttpTransport(options => options.Stateless = true)
     .WithToolsFromAssembly();
 
 builder.Services.AddScoped<AgenteEntrada>();
 builder.Services.AddScoped<AgenteConversacion>();
+builder.Services.AddScoped<AgenteEnrutador>();
+builder.Services.AddScoped<AgenteAccion>();
 builder.Services.AddLlmServices(builder.Configuration);
 builder.Services.AddApiServices(builder.Configuration);
 
@@ -35,13 +37,16 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 
-
-if (!builder.Environment.IsDevelopment())
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddKeyedSingleton<IMessageQueue>("outbound", (sp, _) => new NullMessageQueue());
+    builder.Services.AddScoped<McpServer.MessageQueue.OutboundQueueService>();
+}
+else
 {
     builder.Services.AddMessageQueues(builder.Configuration);
     builder.Services.AddHostedService<QueueWorker>();
 }
-
 
 var app = builder.Build();
 
@@ -50,7 +55,6 @@ app.MapMcp("/mcp");
 app.MapGet("/debug/tools", () =>
 {
     var assembly = typeof(Program).Assembly;
-
     var tools = assembly
         .GetTypes()
         .Where(t => t.GetCustomAttributes(typeof(McpServerToolTypeAttribute), true).Any())
@@ -65,12 +69,47 @@ app.MapGet("/debug/tools", () =>
                     ReturnType = m.ReturnType.FullName
                 })
         });
-
     return Results.Json(tools);
 });
 
-app.Run();
+app.MapPost("/debug/ejecutar-flujo/{ticketId:int}", async (
+    int ticketId,
+    AgenteEnrutador enrutador,
+    CancellationToken ct) =>
+{
+    await enrutador.ProcessAsync(new InboundMessage(
+        TicketId: ticketId.ToString(),
+        CorrelationId: Guid.NewGuid().ToString(),
+        CustomerId: string.Empty,
+        Action: InboundAction.TicketParaEnrutar,
+        Payload: null), ct);
 
+    return Results.Ok(new { Mensaje = $"Enrutador ejecutado para ticket {ticketId}. Revisar AffectedSystem en la BD." });
+});
+
+app.MapPost("/debug/probar-accion/{ticketId:int}/{agente}", async (
+    int ticketId,
+    string agente,
+    AgenteAccion accion,
+    CancellationToken ct) =>
+{
+    var decision = new EnrutadorResult(ticketId, agente, "Prueba manual sin pasar por el enrutador real");
+
+    var message = new InboundMessage(
+        TicketId: ticketId.ToString(),
+        CorrelationId: Guid.NewGuid().ToString(),
+        CustomerId: string.Empty,
+        Action: InboundAction.TicketParaEjecutar,
+        Payload: JsonSerializer.Serialize(decision));
+
+    var resultado = await accion.ProcessAsync(message, ct);
+
+    return Results.Ok(resultado);
+});
+
+await app.RunAsync();
+
+app.Run();
 
 // ============================================================
 // TOOLS DEL AGENTE ENTRADA
@@ -322,7 +361,7 @@ public static class AgentAiApi
 {
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private static readonly HttpClient Http = new()
+    public static readonly HttpClient Http = new()
     {
         BaseAddress = new Uri(Environment.GetEnvironmentVariable("AGENTAI_API_URL") ?? "http://localhost:5038")
     };
@@ -364,7 +403,8 @@ public static class AgentAiApi
             PriorityLabel: null,
             AssignedTo: null,
             AssignmentGroup: null,
-            ResolvedAt: DateTime.UtcNow);
+            ResolvedAt: DateTime.UtcNow,
+            AffectedSystem: area.ToLower());
 
         using var response = await Http.PutAsJsonAsync($"/tickets/{ticket.Id}", request, JsonOptions);
         response.EnsureSuccessStatusCode();
@@ -388,7 +428,8 @@ public static class AgentAiApi
             PriorityLabel: ticket.Priority <= 2 ? ticket.PriorityLabel : "High",
             AssignedTo: null,
             AssignmentGroup: "Nivel 2",
-            ResolvedAt: null);
+            ResolvedAt: null,
+            AffectedSystem: null);
 
         using var response = await Http.PutAsJsonAsync($"/tickets/{ticket.Id}", request, JsonOptions);
         response.EnsureSuccessStatusCode();
@@ -434,6 +475,18 @@ public static class AgentAiApi
 
         return article.Confidence is "alta" or "media" ? "resolver_con_kb" : "escalar_nivel2";
     }
+}
+
+public class NullMessageQueue : IMessageQueue
+{
+    public Task<IReadOnlyList<QueueMessage>> ReceiveMessagesAsync(int maxMessages, CancellationToken ct)
+        => Task.FromResult<IReadOnlyList<QueueMessage>>(new List<QueueMessage>());
+
+    public Task SendMessageAsync(string body, CancellationToken ct)
+        => Task.CompletedTask;
+
+    public Task DeleteMessageAsync(string receiptHandle, CancellationToken ct)
+        => Task.CompletedTask;
 }
 
 public static class MarkdownKnowledgeBase
@@ -668,7 +721,8 @@ public record UpdateTicketRequest(
     string? PriorityLabel,
     string? AssignedTo,
     string? AssignmentGroup,
-    DateTime? ResolvedAt);
+    DateTime? ResolvedAt,
+    string? AffectedSystem);
 
 public record TicketResponse(
     int Id,

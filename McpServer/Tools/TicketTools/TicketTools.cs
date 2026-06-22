@@ -23,4 +23,31 @@ public class TicketTools
     {
         return await _ticketService.GetTicketAsync(ticketId, ct);
     }
+
+    [McpServerTool, Description("Actualiza el sistema afectado de un ticket según el diagnóstico del enrutador.")]
+    public async Task<string> ActualizarSistemaAfectado(
+        [Description("ID numérico del ticket")]
+        int ticketId,
+        [Description("Sistema afectado: acceso, reserva, pago, notificacion, escalacion")]
+        string sistemaAfectado,
+        CancellationToken ct = default)
+    {
+        var request = new UpdateTicketRequest(
+            Title: null,
+            Description: null,
+            State: null,
+            StateLabel: null,
+            Priority: null,
+            PriorityLabel: null,
+            AssignedTo: null,
+            AssignmentGroup: null,
+            AffectedSystem: sistemaAfectado.ToLower(),
+            ResolvedAt: null);
+
+        var ticket = await _ticketService.UpdateTicketAsync(ticketId, request, ct);
+
+        return ticket is null
+            ? $"Ticket {ticketId} no encontrado."
+            : $"AffectedSystem del ticket {ticketId} actualizado a '{sistemaAfectado}'.";
+    }
 }
