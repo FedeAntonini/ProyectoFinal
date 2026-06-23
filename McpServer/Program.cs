@@ -704,7 +704,9 @@ public record UpdateTicketRequest(
     string? AssignedTo = null,
     string? AssignmentGroup = null,
     DateTime? ResolvedAt = null,
-    string? AffectedSystem = null);
+    string? AffectedSystem = null,
+    string? CreatedByEmail = null,
+    string? CreatedByName = null);
 
 public record TicketResponse(
     int Id,
