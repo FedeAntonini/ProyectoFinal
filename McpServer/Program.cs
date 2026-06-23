@@ -199,24 +199,6 @@ public static class ToolsEnrutador
 
 
 // ============================================================
-// TOOLS DE ESCALACION
-// ============================================================
-[McpServerToolType]
-public static class ToolsEscalacion
-{
-    [McpServerTool, Description("Escala un ticket a nivel 2 cuando no se puede resolver automaticamente con la KB.")]
-    public static async Task<string> EscalarTicket(
-        [Description("ID del ticket a escalar, por ejemplo: INC1234")]
-        string ticketId,
-        [Description("Motivo por el cual se escala el ticket")]
-        string motivo)
-    {
-        return await AgentAiApi.EscalateTicketAsync(ticketId, motivo);
-    }
-}
-
-
-// ============================================================
 // TOOLS DEL AGENTE DE ACCIÓN — PEDIDO
 // ============================================================
 [McpServerToolType]
