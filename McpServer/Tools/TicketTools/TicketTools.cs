@@ -37,6 +37,20 @@ public class TicketTools
             : $"AssignmentGroup del ticket {ticketId} actualizado a 'level two'.";
     }
 
+    public async Task<string> AsignarEmailTicket(
+    [Description("ID numérico del ticket")]
+    int ticketId,
+    [Description("Email del usuario")]
+    string email,
+    CancellationToken ct = default)
+    {
+        var request = new UpdateTicketRequest(CreatedByEmail: email);
+        var ticket = await _ticketService.UpdateTicketAsync(ticketId, request, ct);
+        return ticket is null
+            ? $"Ticket {ticketId} no encontrado."
+            : $"CreatedByEmail del ticket {ticketId} actualizado.";
+    }
+
     [McpServerTool, Description("Actualiza el sistema afectado de un ticket según el diagnóstico del enrutador.")]
     public async Task<string> ActualizarSistemaAfectado(
         [Description("ID numérico del ticket")]
