@@ -12,21 +12,18 @@ public class AgenteEnrutador
     private readonly LlmGateway _llmGateway;
     private readonly IConfiguration _config;
     private readonly ILogger<AgenteEnrutador> _logger;
-    private readonly OutboundQueueService _outboundQueue;
-
+    
     private static readonly string SystemPrompt = 
         new AgentPromptLoader().Load("enrutador.md");
 
     public AgenteEnrutador(
         LlmGateway llmGateway,
         IConfiguration config,
-        ILogger<AgenteEnrutador> logger,
-        OutboundQueueService outboundQueue)
+        ILogger<AgenteEnrutador> logger)
     {
         _llmGateway = llmGateway;
         _config = config;
         _logger = logger;
-        _outboundQueue = outboundQueue;
     }
 
     public async Task<EnrutadorResult> ProcesarAsync(int ticketId, int agentRunId, CancellationToken ct = default)
@@ -80,16 +77,20 @@ public class AgenteEnrutador
     var resultado = new EnrutadorResult(ticketId, decision.Agente, decision.Motivo);
 
     // Encolar TicketParaEjecutar para que AgenteAccion tome la decision
-    await _outboundQueue.SendAsync(new OutboundMessage(
-        TicketId: ticketId.ToString(),
-        CorrelationId: Guid.NewGuid().ToString(),
-        CustomerId: string.Empty,
-        Action: InboundAction.TicketParaEjecutar,
-        Payload: JsonSerializer.Serialize(resultado),
-        TargetAgent: nameof(AgenteAccion)
-    ), ct);
+    await mcpClient.CallToolAsync(
+        "send_outbound_message",
+        new Dictionary<string, object?>
+        {
+            ["ticketId"] = ticketId.ToString(),
+            ["correlationId"] = Guid.NewGuid().ToString(),
+            ["customerId"] = string.Empty,
+            ["targetAgent"] = "enrutador",
+            ["action"] = "agente_accion",
+            ["payload"] = JsonSerializer.Serialize(resultado)
+        },
+        cancellationToken: ct);
 
-    _logger.LogInformation("TicketParaEjecutar encolado para ticket {TicketId}", ticketId);
+    _logger.LogInformation("agente_accion encolado para ticket {TicketId}", ticketId);
 
     return resultado;
     }
