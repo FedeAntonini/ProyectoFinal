@@ -210,7 +210,7 @@ public class AgenteConversacion
                         },
                         cancellationToken: ct);
                     await mcpClient.CallToolAsync(
-                        "escalate_ticket",
+                        "escalar_ticket",
                         new Dictionary<string, object?>
                         {
                             ["ticketId"] = inboundMessage.TicketId,
