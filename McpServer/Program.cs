@@ -588,9 +588,9 @@ public static class MarkdownKnowledgeBase
 
         var directories = new[]
         {
-            Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "KnowledgeBase")),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "KnowledgeBase")),
             Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "KnowledgeBase")),
-            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "KnowledgeBase"))
+            Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "KnowledgeBase")),
         };
 
         foreach (var directory in directories.Where(Directory.Exists))

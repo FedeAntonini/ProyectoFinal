@@ -18,6 +18,6 @@ public sealed class AgentPromptLoader
         if (!string.IsNullOrWhiteSpace(configured))
             return Path.GetFullPath(configured);
 
-        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Prompts"));
+        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "Prompts"));
     }
 }
