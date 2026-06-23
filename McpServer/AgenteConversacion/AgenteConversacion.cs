@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using McpServer.Api.Messages.Dto;
+using McpServer.Api.AgentRun.Dto;
 using McpServer.MessageQueue;
 using McpServer.Services;
 using Microsoft.Extensions.AI;
@@ -18,10 +19,11 @@ public class AgenteConversacion
         Eres un asistente de soporte técnico. Tu trabajo es analizar el ticket, el historial de la
         conversación y el último mensaje del usuario, para luego decidir una de tres acciones:
 
-        - ask_more: Necesitás más información del usuario para poder continuar.
+        - ask_more: Te falta alguno de los siguientes datos: numero de ticket (INCxxxxx), descripcion detallada del problema, email del usuario. 
+          En tu respuesta, indica exactamente que datos faltan. 
         - escalate: El problema requiere intervención o actividad física (por ejemplo, reemplazo de
           hardware, visitas presenciales, reparaciones físicas). Siempre escalá estos casos al nivel 2.
-        - continue: Tenés suficiente información para resolver el problema brindando asesoramiento.
+        - continue: Tenes todos los datos requeridos: un numero de Ticket, una descripcion detallada del problema y el mail del usuario.
 
         Respondé ÚNICAMENTE con un objeto JSON en este formato:
         {
@@ -133,33 +135,92 @@ public class AgenteConversacion
                 agentRunResult.Id, decision.Decision);
 
             // 9. Map decision to outbound action
-            var outboundAction = decision.Decision switch
+            switch (decision.Decision)
             {
-                "escalate" => "escalate",
-                "ask_more" => "send_message",
-                "continue" => "send_message",
-                _ => throw new InvalidOperationException($"Unknown LLM decision: {decision.Decision}")
-            };
+                case "ask_more":
+                    await mcpClient.CallToolAsync(
+                        "send_outbound_message",
+                        new Dictionary<string, object?>
+                        {
+                            ["ticketId"] = inboundMessage.TicketId,
+                            ["correlationId"] = inboundMessage.CorrelationId,
+                            ["customerId"] = inboundMessage.CustomerId,
+                            ["targetAgent"] = "conversacion",
+                            ["action"] = "send_message",
+                            ["payload"] = JsonSerializer.Serialize(new
+                            {
+                                payload.ConversationId,
+                                Body = decision.Message,
+                                MessageType = "text"
+                            })
+                        },
+                        cancellationToken: ct);
+                    break;
 
-            // 10. Send to outbound queue
-            await mcpClient.CallToolAsync(
-                "send_outbound_message",
-                new Dictionary<string, object?>
-                {
-                    ["ticketId"] = inboundMessage.TicketId,
-                    ["correlationId"] = inboundMessage.CorrelationId,
-                    ["customerId"] = inboundMessage.CustomerId,
-                    ["targetAgent"] = "conversacion",
-                    ["action"] = outboundAction,
-                    ["payload"] = JsonSerializer.Serialize(new
-                    {
-                        payload.ConversationId,
-                        Body = decision.Message,
-                        MessageType = "text"
-                    })
-                },
-                cancellationToken: ct);
+                case "continue":
+                    await mcpClient.CallToolAsync(
+                        "send_outbound_message",
+                        new Dictionary<string, object?>
+                        {
+                            ["ticketId"] = inboundMessage.TicketId,
+                            ["correlationId"] = inboundMessage.CorrelationId,
+                            ["customerId"] = inboundMessage.CustomerId,
+                            ["targetAgent"] = "conversacion",
+                            ["action"] = "send_message",
+                            ["payload"] = JsonSerializer.Serialize(new
+                            {
+                                payload.ConversationId,
+                                Body = decision.Message,
+                                MessageType = "text"
+                            })
+                        },
+                        cancellationToken: ct);
+                    await mcpClient.CallToolAsync(
+                        "send_outbound_message",
+                        new Dictionary<string, object?>
+                        {
+                            ["ticketId"] = inboundMessage.TicketId,
+                            ["correlationId"] = inboundMessage.CorrelationId,
+                            ["customerId"] = inboundMessage.CustomerId,
+                            ["targetAgent"] = "conversacion",
+                            ["action"] = "agente_enrutador",
+                            ["payload"] = JsonSerializer.Serialize(new {
+                                payload.ConversationId,
+                            })
+                        },
+                        cancellationToken: ct);
+                    break;
 
+                case "escalate":
+                    await mcpClient.CallToolAsync(
+                        "send_outbound_message",
+                        new Dictionary<string, object?>
+                        {
+                            ["ticketId"] = inboundMessage.TicketId,
+                            ["correlationId"] = inboundMessage.CorrelationId,
+                            ["customerId"] = inboundMessage.CustomerId,
+                            ["targetAgent"] = "conversacion",
+                            ["action"] = "send_message",
+                            ["payload"] = JsonSerializer.Serialize(new
+                            {
+                                payload.ConversationId,
+                                Body = decision.Message,
+                                MessageType = "text"
+                            })
+                        },
+                        cancellationToken: ct);
+                    await mcpClient.CallToolAsync(
+                        "escalar_ticket",
+                        new Dictionary<string, object?>
+                        {
+                            ["ticketId"] = inboundMessage.TicketId,
+                        },
+                        cancellationToken: ct);
+                    break;
+
+                default:
+                    throw new InvalidOperationException($"Unknown LLM decision: {decision.Decision}");
+            }
             // 11. Complete agent run
             await mcpClient.CallToolAsync(
                 "update_agent_run_status",
@@ -201,6 +262,5 @@ public class AgenteConversacion
         return await McpClient.CreateAsync(transport, cancellationToken: ct);
     }
 
-    private record AgentRunResult(int Id, int TicketId, string Status, DateTime CreatedAt);
     private record LlmDecision(string Decision, string Message);
 }

@@ -713,16 +713,16 @@ public record CreateAgentTicketRequest(
     string UserEmail);
 
 public record UpdateTicketRequest(
-    string? Title,
-    string? Description,
-    int? State,
-    string? StateLabel,
-    int? Priority,
-    string? PriorityLabel,
-    string? AssignedTo,
-    string? AssignmentGroup,
-    DateTime? ResolvedAt,
-    string? AffectedSystem);
+    string? Title = null,
+    string? Description = null,
+    int? State = null,
+    string? StateLabel = null,
+    int? Priority = null,
+    string? PriorityLabel = null,
+    string? AssignedTo = null,
+    string? AssignmentGroup = null,
+    DateTime? ResolvedAt = null,
+    string? AffectedSystem = null);
 
 public record TicketResponse(
     int Id,

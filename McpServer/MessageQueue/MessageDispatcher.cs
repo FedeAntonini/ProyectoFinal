@@ -37,6 +37,8 @@ public class MessageDispatcher
                 return _agenteEnrutador.ProcessAsync(message, ct);
             case InboundAction.TicketParaEjecutar:
                 return _agenteAccion.ProcessAsync(message, ct);
+            case InboundAction.AgenteEnrutador:
+                return _agenteEnrutador.ProcessAsync(message, ct);
             default:
                 _logger.LogWarning("Unexpected action type: {Action}", message.Action);
                 return Task.CompletedTask;

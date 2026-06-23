@@ -24,6 +24,19 @@ public class TicketTools
         return await _ticketService.GetTicketAsync(ticketId, ct);
     }
 
+    [McpServerTool, Description("Escalates a ticket by updating its assignment group to level two.")]
+    public async Task<string> EscalarTicket(
+    [Description("ID numérico del ticket")]
+    int ticketId,
+    CancellationToken ct = default)
+    {
+        var request = new UpdateTicketRequest(AssignmentGroup: "Level two");
+        var ticket = await _ticketService.UpdateTicketAsync(ticketId, request, ct);
+        return ticket is null
+            ? $"Ticket {ticketId} no encontrado."
+            : $"AssignmentGroup del ticket {ticketId} actualizado a 'level two'.";
+    }
+
     [McpServerTool, Description("Actualiza el sistema afectado de un ticket según el diagnóstico del enrutador.")]
     public async Task<string> ActualizarSistemaAfectado(
         [Description("ID numérico del ticket")]
@@ -32,17 +45,7 @@ public class TicketTools
         string sistemaAfectado,
         CancellationToken ct = default)
     {
-        var request = new UpdateTicketRequest(
-            Title: null,
-            Description: null,
-            State: null,
-            StateLabel: null,
-            Priority: null,
-            PriorityLabel: null,
-            AssignedTo: null,
-            AssignmentGroup: null,
-            AffectedSystem: sistemaAfectado.ToLower(),
-            ResolvedAt: null);
+        var request = new UpdateTicketRequest(AffectedSystem: sistemaAfectado.ToLower());
 
         var ticket = await _ticketService.UpdateTicketAsync(ticketId, request, ct);
 
