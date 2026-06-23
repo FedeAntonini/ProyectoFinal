@@ -30,7 +30,7 @@ public class LlmGateway
         var response = await _llm.CompleteAsync(systemPrompt, messages, ct);
 
         await mcpClient.CallToolAsync(
-            "update_agent_step",
+            "update_agent_step",    
             new Dictionary<string, object?>
             {
                 ["stepId"] = step.Id,
