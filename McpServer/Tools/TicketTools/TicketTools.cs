@@ -37,6 +37,7 @@ public class TicketTools
             : $"AssignmentGroup del ticket {ticketId} actualizado a 'level two'.";
     }
 
+    [McpServerTool, Description("Assigns an email to a ticket")]
     public async Task<string> AsignarEmailTicket(
     [Description("ID numérico del ticket")]
     int ticketId,
