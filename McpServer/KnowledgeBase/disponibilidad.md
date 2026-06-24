@@ -19,7 +19,7 @@ Cuando escalar:
 ## KB-DISPONIBILIDAD-001 - Turno figura completo
 Sistema: disponibilidad
 Confianza: media
-Tags: disponibilidad, cupo, cupos, completo, lugares, turno, clase, reserva
+Tags: disponibilidad, cupo, cupos, completo, sin lugares, no puedo reservar, clase llena, no hay lugar
 Acciones: consultar_disponibilidad
 Descripcion: La turnera muestra un turno como completo aunque deberia tener lugares disponibles.
 Sintomas: Turno sin cupos visibles, clase bloqueada, el socio no puede reservar aunque cree que hay disponibilidad.

@@ -19,7 +19,7 @@ Cuando escalar:
 ## KB-TURNOS-001 - Reserva confirmada no aparece
 Sistema: turnos
 Confianza: media
-Tags: turno, turnos, reserva, reservas, confirmacion, agenda, clase, turnera
+Tags: turno, turnos, reserva, reservas, clase reservada, ver mis clases, no aparece mi reserva, agenda, horario reservado
 Acciones: consultar_turnos
 Descripcion: El socio realizo una reserva y recibio confirmacion, pero no la ve en su lista de turnos.
 Sintomas: Reserva ausente en la app, confirmacion recibida por otro canal, turno no visible en la agenda del socio.

@@ -22,7 +22,7 @@ Cuando escalar:
 ## KB-ACCESO-001 - Socio no puede iniciar sesion
 Sistema: acceso
 Confianza: alta
-Tags: acceso, login, sesion, credenciales, password, contrasena, turnera, socio
+Tags: acceso, login, sesion, credenciales, password, contrasena, iniciar sesion, no puedo entrar, no me deja ingresar, cuenta bloqueada, error de login
 Acciones: resetear_acceso
 Descripcion: El socio no puede iniciar sesion en la app de la turnera o recibe error de credenciales invalidas.
 Sintomas: Error de credenciales, password incorrecto, pantalla de login no avanza, sesion expirada o acceso bloqueado.
