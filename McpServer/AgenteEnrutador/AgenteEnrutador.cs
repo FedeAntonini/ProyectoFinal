@@ -26,7 +26,7 @@ public class AgenteEnrutador
         _logger = logger;
     }
 
-    public async Task<EnrutadorResult> ProcesarAsync(int ticketId, int agentRunId, CancellationToken ct = default)
+    public async Task<EnrutadorResult> ProcesarAsync(int ticketId, int agentRunId, string correlationId, string customerId, CancellationToken ct = default)
     {
     _logger.LogInformation("AgenteEnrutador procesando ticket {TicketId}", ticketId);
 
@@ -82,8 +82,8 @@ public class AgenteEnrutador
         new Dictionary<string, object?>
         {
             ["ticketId"] = ticketId.ToString(),
-            ["correlationId"] = Guid.NewGuid().ToString(),
-            ["customerId"] = string.Empty,
+            ["correlationId"] = correlationId,
+            ["customerId"] = customerId,
             ["targetAgent"] = "enrutador",
             ["action"] = "agente_accion",
             ["payload"] = JsonSerializer.Serialize(resultado)
@@ -128,7 +128,7 @@ public class AgenteEnrutador
     await using var mcpClient = await CreateMcpClientAsync(ct);
     var agentRunId = await CreateAgentRunAsync(mcpClient, ticketId, ct);
 
-    await ProcesarAsync(ticketId, agentRunId, ct);
+    await ProcesarAsync(ticketId, agentRunId, message.CorrelationId, message.CustomerId, ct);
 }
 
 private async Task<int> CreateAgentRunAsync(McpClient client, int ticketId, CancellationToken ct)

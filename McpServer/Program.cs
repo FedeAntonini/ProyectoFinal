@@ -77,12 +77,14 @@ app.MapPost("/debug/ejecutar-flujo/{ticketId:int}", async (
     AgenteEnrutador enrutador,
     CancellationToken ct) =>
 {
-    await enrutador.ProcessAsync(new InboundMessage(
+    var message = new InboundMessage(
         TicketId: ticketId.ToString(),
-        CorrelationId: Guid.NewGuid().ToString(),
-        CustomerId: string.Empty,
+        CorrelationId: ticketId.ToString(), // usar ticketId como correlationId de prueba
+        CustomerId: "5919549290",  // el DefaultChatId de Telegram para pruebas
         Action: InboundAction.TicketParaEnrutar,
-        Payload: null), ct);
+        Payload: null);
+
+    await enrutador.ProcessAsync(message, ct);
 
     return Results.Ok(new { Mensaje = $"Enrutador ejecutado para ticket {ticketId}. Revisar AffectedSystem en la BD." });
 });
