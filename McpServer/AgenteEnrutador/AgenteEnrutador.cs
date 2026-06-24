@@ -86,7 +86,13 @@ public class AgenteEnrutador
             ["customerId"] = customerId,
             ["targetAgent"] = "enrutador",
             ["action"] = "agente_accion",
-            ["payload"] = JsonSerializer.Serialize(resultado)
+            ["payload"] = JsonSerializer.Serialize(new
+                {
+                    resultado.TicketId,
+                    resultado.Agente,
+                    resultado.Motivo,
+                    ConversationId = conversationId
+                })
         },
         cancellationToken: ct);
 
