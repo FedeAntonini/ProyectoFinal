@@ -26,7 +26,7 @@ public class AgenteEnrutador
         _logger = logger;
     }
 
-    public async Task<EnrutadorResult> ProcesarAsync(int ticketId, int agentRunId, string correlationId, string customerId, CancellationToken ct = default)
+    public async Task<EnrutadorResult> ProcesarAsync(int ticketId, int agentRunId, string correlationId, string customerId, int conversationId, CancellationToken ct = default)
     {
     _logger.LogInformation("AgenteEnrutador procesando ticket {TicketId}", ticketId);
 
@@ -118,41 +118,54 @@ public class AgenteEnrutador
     }
 
     public async Task ProcessAsync(InboundMessage message, CancellationToken ct = default)
-{
-    if (!int.TryParse(message.TicketId, out var ticketId))
     {
-        _logger.LogWarning("TicketId inválido: {TicketId}", message.TicketId);
-        return;
+        if (!int.TryParse(message.TicketId, out var ticketId))
+        {
+            _logger.LogWarning("TicketId inválido: {TicketId}", message.TicketId);
+            return;
+        }
+
+        // Extraer ConversationId del payload
+        int conversationId = 0;
+        if (!string.IsNullOrWhiteSpace(message.Payload))
+        {
+            try
+            {
+                var payloadDoc = JsonSerializer.Deserialize<JsonElement>(message.Payload);
+                if (payloadDoc.TryGetProperty("conversationId", out var convIdEl))
+                    conversationId = convIdEl.GetInt32();
+            }
+            catch { /* si no viene, continuamos con 0 */ }
+        }
+
+        await using var mcpClient = await CreateMcpClientAsync(ct);
+        var agentRunId = await CreateAgentRunAsync(mcpClient, ticketId, ct);
+
+        await ProcesarAsync(ticketId, agentRunId, message.CorrelationId, message.CustomerId, conversationId, ct);
     }
 
-    await using var mcpClient = await CreateMcpClientAsync(ct);
-    var agentRunId = await CreateAgentRunAsync(mcpClient, ticketId, ct);
+    private async Task<int> CreateAgentRunAsync(McpClient client, int ticketId, CancellationToken ct)
+    {
+        var result = await client.CallToolAsync(
+            "create_agent_run",
+            new Dictionary<string, object?> { ["ticketId"] = ticketId },
+            cancellationToken: ct);
 
-    await ProcesarAsync(ticketId, agentRunId, message.CorrelationId, message.CustomerId, ct);
-}
+        var text = result.Content
+            .OfType<TextContentBlock>()
+            .FirstOrDefault()?.Text
+            ?? throw new InvalidOperationException("create_agent_run returned no text content.");
 
-private async Task<int> CreateAgentRunAsync(McpClient client, int ticketId, CancellationToken ct)
-{
-    var result = await client.CallToolAsync(
-        "create_agent_run",
-        new Dictionary<string, object?> { ["ticketId"] = ticketId },
-        cancellationToken: ct);
+        var run = JsonSerializer.Deserialize<AgentRunResult>(text,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+            ?? throw new InvalidOperationException("Failed to deserialize agent run.");
 
-    var text = result.Content
-        .OfType<TextContentBlock>()
-        .FirstOrDefault()?.Text
-        ?? throw new InvalidOperationException("create_agent_run returned no text content.");
+        return run.Id;
+    }
 
-    var run = JsonSerializer.Deserialize<AgentRunResult>(text,
-        new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-        ?? throw new InvalidOperationException("Failed to deserialize agent run.");
+    private record AgentRunResult(int Id, int TicketId, string Status, DateTime StartedAt, DateTime? EndedAt);
 
-    return run.Id;
-}
+        private record EnrutadorDecision(string Agente, string Motivo);
+    }
 
-private record AgentRunResult(int Id, int TicketId, string Status, DateTime StartedAt, DateTime? EndedAt);
-
-    private record EnrutadorDecision(string Agente, string Motivo);
-}
-
-public record EnrutadorResult(int TicketId, string Agente, string Motivo);
+    public record EnrutadorResult(int TicketId, string Agente, string Motivo);

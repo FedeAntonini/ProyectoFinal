@@ -1,5 +1,4 @@
 using System.Text.Json;
-using McpServer.Agentes;
 using McpServer.Api.Tickets;
 using McpServer.Api.Tickets.Dto;
 using McpServer.Api.Turnera;
@@ -30,7 +29,7 @@ public class AgenteAccion
 
     public async Task<AccionResult> ProcessAsync(InboundMessage message, CancellationToken ct = default)
     {
-        var decision = JsonSerializer.Deserialize<EnrutadorResult>(message.Payload ?? string.Empty,
+        var decision = JsonSerializer.Deserialize<EnrutadorAccionPayload>(message.Payload ?? string.Empty,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
         if (decision is null)
@@ -55,11 +54,11 @@ public class AgenteAccion
 
         return decision.Agente switch
         {
-            "AgenteAccionAcceso" => await EjecutarAccesoAsync(ticket, mcpClient, message, ct),
-            "AgenteAccionPago" => await EjecutarPagoAsync(ticket, mcpClient, message, ct),
-            "AgenteAccionTurnos" => await EjecutarTurnoAsync(ticket, mcpClient, message, ct),
-            "AgenteAccionDisponibilidad" => await EjecutarDisponibilidadAsync(ticket, mcpClient, message, ct),
-            _ => await EjecutarEscalacionAsync(ticket, decision.Motivo, mcpClient, message, ct)
+            "AgenteAccionAcceso" => await EjecutarAccesoAsync(ticket, mcpClient, message, decision.ConversationId, ct),
+            "AgenteAccionPago" => await EjecutarPagoAsync(ticket, mcpClient, message, decision.ConversationId, ct),
+            "AgenteAccionTurnos" => await EjecutarTurnoAsync(ticket, mcpClient, message, decision.ConversationId, ct),
+            "AgenteAccionDisponibilidad" => await EjecutarDisponibilidadAsync(ticket, mcpClient, message, decision.ConversationId, ct),
+            _ => await EjecutarEscalacionAsync(ticket, decision.Motivo, mcpClient, message, decision.ConversationId, ct)
         };
     }
 
@@ -76,7 +75,7 @@ public class AgenteAccion
         return await McpClient.CreateAsync(transport, cancellationToken: ct);
     }
 
-    private async Task NotificarUsuarioAsync(McpClient mcpClient, InboundMessage message, string texto, CancellationToken ct)
+    private async Task NotificarUsuarioAsync(McpClient mcpClient, InboundMessage message, int conversationId, string texto, CancellationToken ct)
     {
         await mcpClient.CallToolAsync(
             "send_outbound_message",
@@ -89,6 +88,7 @@ public class AgenteAccion
                 ["action"] = "send_message",
                 ["payload"] = JsonSerializer.Serialize(new
                 {
+                    ConversationId = conversationId,
                     Body = texto,
                     MessageType = "text"
                 })
@@ -96,7 +96,7 @@ public class AgenteAccion
             cancellationToken: ct);
     }
 
-    private async Task<AccionResult> EjecutarAccesoAsync(TicketResponse ticket, McpClient mcpClient, InboundMessage message, CancellationToken ct)
+    private async Task<AccionResult> EjecutarAccesoAsync(TicketResponse ticket, McpClient mcpClient, InboundMessage message, int conversationId, CancellationToken ct)
     {
         var email = ticket.CreatedByEmail;
 
@@ -116,15 +116,15 @@ public class AgenteAccion
         }
 
         var resolucion = string.IsNullOrWhiteSpace(reset.TempPassword)
-            ? $"Tu acceso fue reseteado correctamente."
+            ? "Tu acceso fue reseteado correctamente."
             : $"Tu acceso fue reseteado. Tu nueva contraseña temporal es: {reset.TempPassword}. Por favor cambiala cuando ingreses.";
 
-        await NotificarUsuarioAsync(mcpClient, message, resolucion, ct);
+        await NotificarUsuarioAsync(mcpClient, message, conversationId, resolucion, ct);
 
         return AccionResult.PendienteConfirmacion(ticket.Number, resolucion);
     }
 
-    private async Task<AccionResult> EjecutarPagoAsync(TicketResponse ticket, McpClient mcpClient, InboundMessage message, CancellationToken ct)
+    private async Task<AccionResult> EjecutarPagoAsync(TicketResponse ticket, McpClient mcpClient, InboundMessage message, int conversationId, CancellationToken ct)
     {
         var email = ticket.CreatedByEmail;
 
@@ -138,9 +138,8 @@ public class AgenteAccion
 
         if (pagos.Credits is null && (pagos.Pagos is null || pagos.Pagos.Count == 0))
         {
-            var mensajeFalla = $"No pude consultar pagos para {email}.";
             _logger.LogWarning("Consulta de pago fallida para ticket {TicketId}", ticket.Number);
-            return AccionResult.Fallido(ticket.Number, mensajeFalla);
+            return AccionResult.Fallido(ticket.Number, $"No pude consultar pagos para {email}.");
         }
 
         var cantidadPagos = pagos.Pagos?.Count ?? 0;
@@ -154,12 +153,12 @@ public class AgenteAccion
                          $"• Clases pagadas: {pagadas}\n" +
                          $"• Clases reservadas: {reservadas}";
 
-        await NotificarUsuarioAsync(mcpClient, message, resolucion, ct);
+        await NotificarUsuarioAsync(mcpClient, message, conversationId, resolucion, ct);
 
         return AccionResult.PendienteConfirmacion(ticket.Number, resolucion);
     }
 
-    private async Task<AccionResult> EjecutarTurnoAsync(TicketResponse ticket, McpClient mcpClient, InboundMessage message, CancellationToken ct)
+    private async Task<AccionResult> EjecutarTurnoAsync(TicketResponse ticket, McpClient mcpClient, InboundMessage message, int conversationId, CancellationToken ct)
     {
         var email = ticket.CreatedByEmail;
 
@@ -189,13 +188,13 @@ public class AgenteAccion
             resolucion = $"Tus turnos reservados son:\n{detalle}";
         }
 
-        await NotificarUsuarioAsync(mcpClient, message, resolucion, ct);
+        await NotificarUsuarioAsync(mcpClient, message, conversationId, resolucion, ct);
         await CerrarTicketAsync(ticket, resolucion, ct);
 
         return AccionResult.Resuelto(ticket.Number, resolucion);
     }
 
-    private async Task<AccionResult> EjecutarDisponibilidadAsync(TicketResponse ticket, McpClient mcpClient, InboundMessage message, CancellationToken ct)
+    private async Task<AccionResult> EjecutarDisponibilidadAsync(TicketResponse ticket, McpClient mcpClient, InboundMessage message, int conversationId, CancellationToken ct)
     {
         var email = ticket.CreatedByEmail;
 
@@ -206,10 +205,10 @@ public class AgenteAccion
         }
 
         _logger.LogWarning("SubagenteDisponibilidad no implementado aun, escalando ticket {TicketId}", ticket.Number);
-        return await EjecutarEscalacionAsync(ticket, "Consulta de disponibilidad no implementada aún en la turnera.", mcpClient, message, ct);
+        return await EjecutarEscalacionAsync(ticket, "Consulta de disponibilidad no implementada aún en la turnera.", mcpClient, message, conversationId, ct);
     }
 
-    private async Task<AccionResult> EjecutarEscalacionAsync(TicketResponse ticket, string motivo, McpClient mcpClient, InboundMessage message, CancellationToken ct)
+    private async Task<AccionResult> EjecutarEscalacionAsync(TicketResponse ticket, string motivo, McpClient mcpClient, InboundMessage message, int conversationId, CancellationToken ct)
     {
         _logger.LogInformation("Escalando ticket {TicketId}. Motivo: {Motivo}", ticket.Number, motivo);
 
@@ -229,7 +228,7 @@ public class AgenteAccion
 
         var mensajeEscalacion = "Tu consulta requiere atención especializada. La derivamos al equipo de soporte nivel 2 que te contactará a la brevedad.";
 
-        await NotificarUsuarioAsync(mcpClient, message, mensajeEscalacion, ct);
+        await NotificarUsuarioAsync(mcpClient, message, conversationId, mensajeEscalacion, ct);
 
         return AccionResult.Escalado(ticket.Number, $"Escalado a Nivel 2. Motivo: {motivo}");
     }
@@ -271,6 +270,8 @@ public class AgenteAccion
         return $"{dia} {d:dd/MM/yyyy}";
     }
 }
+
+public record EnrutadorAccionPayload(int TicketId, string Agente, string Motivo, int ConversationId);
 
 public enum AccionEstado
 {
