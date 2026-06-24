@@ -30,11 +30,11 @@ public class TicketTools
     int ticketId,
     CancellationToken ct = default)
     {
-        var request = new UpdateTicketRequest(AssignmentGroup: "Level two");
+        var request = new UpdateTicketRequest(AssignmentGroup: "Soporte Nivel 2");
         var ticket = await _ticketService.UpdateTicketAsync(ticketId, request, ct);
         return ticket is null
             ? $"Ticket {ticketId} no encontrado."
-            : $"AssignmentGroup del ticket {ticketId} actualizado a 'level two'.";
+            : $"AssignmentGroup del ticket {ticketId} actualizado a 'Soporte Nivel 2'.";
     }
 
     [McpServerTool, Description("Assigns an email to a ticket")]

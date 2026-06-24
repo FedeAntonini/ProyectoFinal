@@ -121,7 +121,8 @@ public class AgenteAccion
 
         await NotificarUsuarioAsync(mcpClient, message, conversationId, resolucion, ct);
 
-        return AccionResult.PendienteConfirmacion(ticket.Number, resolucion);
+        await CerrarTicketAsync(ticket, resolucion, ct);
+        return AccionResult.Resuelto(ticket.Number, resolucion);
     }
 
     private async Task<AccionResult> EjecutarPagoAsync(TicketResponse ticket, McpClient mcpClient, InboundMessage message, int conversationId, CancellationToken ct)
@@ -155,7 +156,8 @@ public class AgenteAccion
 
         await NotificarUsuarioAsync(mcpClient, message, conversationId, resolucion, ct);
 
-        return AccionResult.PendienteConfirmacion(ticket.Number, resolucion);
+        await CerrarTicketAsync(ticket, resolucion, ct);
+        return AccionResult.Resuelto(ticket.Number, resolucion);
     }
 
     private async Task<AccionResult> EjecutarTurnoAsync(TicketResponse ticket, McpClient mcpClient, InboundMessage message, int conversationId, CancellationToken ct)
@@ -220,7 +222,7 @@ public class AgenteAccion
             Priority: ticket.Priority <= 2 ? ticket.Priority : 2,
             PriorityLabel: ticket.Priority <= 2 ? ticket.PriorityLabel : "High",
             AssignedTo: null,
-            AssignmentGroup: "Nivel 2",
+            AssignmentGroup: "Soporte Nivel 2",
             AffectedSystem: null,
             ResolvedAt: null);
 

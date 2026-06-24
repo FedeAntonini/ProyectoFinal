@@ -411,7 +411,7 @@ public static class AgentAiApi
             Priority: ticket.Priority <= 2 ? ticket.Priority : 2,
             PriorityLabel: ticket.Priority <= 2 ? ticket.PriorityLabel : "High",
             AssignedTo: null,
-            AssignmentGroup: "Nivel 2",
+            AssignmentGroup: "Soporte Nivel 2",
             ResolvedAt: null,
             AffectedSystem: null);
 
