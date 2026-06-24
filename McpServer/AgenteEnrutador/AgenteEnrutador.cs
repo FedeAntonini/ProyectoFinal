@@ -138,7 +138,7 @@ public class AgenteEnrutador
             try
             {
                 var payloadDoc = JsonSerializer.Deserialize<JsonElement>(message.Payload);
-                if (payloadDoc.TryGetProperty("conversationId", out var convIdEl))
+                if (payloadDoc.TryGetProperty("ConversationId", out var convIdEl))
                     conversationId = convIdEl.GetInt32();
             }
             catch { /* si no viene, continuamos con 0 */ }
