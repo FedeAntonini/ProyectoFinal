@@ -4,6 +4,8 @@ using McpServer.Api.Tickets;
 using McpServer.Api.Tickets.Dto;
 using McpServer.Api.Turnera;
 using McpServer.MessageQueue;
+using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
 
 namespace McpServer.Agentes;
 
@@ -11,15 +13,18 @@ public class AgenteAccion
 {
     private readonly ITicketService _ticketService;
     private readonly ITurneraService _turneraService;
+    private readonly IConfiguration _config;
     private readonly ILogger<AgenteAccion> _logger;
 
     public AgenteAccion(
         ITicketService ticketService,
         ITurneraService turneraService,
+        IConfiguration config,
         ILogger<AgenteAccion> logger)
     {
         _ticketService = ticketService;
         _turneraService = turneraService;
+        _config = config;
         _logger = logger;
     }
 
@@ -46,17 +51,52 @@ public class AgenteAccion
             return AccionResult.Fallido(decision.TicketId.ToString(), $"Ticket {decision.TicketId} no encontrado.");
         }
 
+        await using var mcpClient = await CreateMcpClientAsync(ct);
+
         return decision.Agente switch
         {
-            "AgenteAccionAcceso" => await EjecutarAccesoAsync(ticket, ct),
-            "AgenteAccionPago" => await EjecutarPagoAsync(ticket, ct),
-            "AgenteAccionTurnos" => await EjecutarTurnoAsync(ticket, ct),
-            "AgenteAccionDisponibilidad" => await EjecutarDisponibilidadAsync(ticket, ct),
-            _ => await EjecutarEscalacionAsync(ticket, decision.Motivo, ct)
+            "AgenteAccionAcceso" => await EjecutarAccesoAsync(ticket, mcpClient, message, ct),
+            "AgenteAccionPago" => await EjecutarPagoAsync(ticket, mcpClient, message, ct),
+            "AgenteAccionTurnos" => await EjecutarTurnoAsync(ticket, mcpClient, message, ct),
+            "AgenteAccionDisponibilidad" => await EjecutarDisponibilidadAsync(ticket, mcpClient, message, ct),
+            _ => await EjecutarEscalacionAsync(ticket, decision.Motivo, mcpClient, message, ct)
         };
     }
 
-    private async Task<AccionResult> EjecutarAccesoAsync(TicketResponse ticket, CancellationToken ct)
+    private async Task<McpClient> CreateMcpClientAsync(CancellationToken ct)
+    {
+        var mcpUrl = _config["McpServer:BaseUrl"] ?? throw new InvalidOperationException("Missing McpServer:BaseUrl");
+
+        var transport = new HttpClientTransport(new HttpClientTransportOptions
+        {
+            Endpoint = new Uri($"{mcpUrl}/mcp"),
+            Name = "McpServer"
+        });
+
+        return await McpClient.CreateAsync(transport, cancellationToken: ct);
+    }
+
+    private async Task NotificarUsuarioAsync(McpClient mcpClient, InboundMessage message, string texto, CancellationToken ct)
+    {
+        await mcpClient.CallToolAsync(
+            "send_outbound_message",
+            new Dictionary<string, object?>
+            {
+                ["ticketId"] = message.TicketId,
+                ["correlationId"] = message.CorrelationId,
+                ["customerId"] = message.CustomerId,
+                ["targetAgent"] = "accion",
+                ["action"] = "send_message",
+                ["payload"] = JsonSerializer.Serialize(new
+                {
+                    Body = texto,
+                    MessageType = "text"
+                })
+            },
+            cancellationToken: ct);
+    }
+
+    private async Task<AccionResult> EjecutarAccesoAsync(TicketResponse ticket, McpClient mcpClient, InboundMessage message, CancellationToken ct)
     {
         var email = ticket.CreatedByEmail;
 
@@ -76,14 +116,15 @@ public class AgenteAccion
         }
 
         var resolucion = string.IsNullOrWhiteSpace(reset.TempPassword)
-            ? $"Acceso reseteado para {email}."
-            : $"Acceso reseteado para {email}. Password temporal: {reset.TempPassword}.";
+            ? $"Tu acceso fue reseteado correctamente."
+            : $"Tu acceso fue reseteado. Tu nueva contraseña temporal es: {reset.TempPassword}. Por favor cambiala cuando ingreses.";
 
-        // No se cierra el ticket: queda pendiente de confirmacion del usuario.
+        await NotificarUsuarioAsync(mcpClient, message, resolucion, ct);
+
         return AccionResult.PendienteConfirmacion(ticket.Number, resolucion);
     }
 
-    private async Task<AccionResult> EjecutarPagoAsync(TicketResponse ticket, CancellationToken ct)
+    private async Task<AccionResult> EjecutarPagoAsync(TicketResponse ticket, McpClient mcpClient, InboundMessage message, CancellationToken ct)
     {
         var email = ticket.CreatedByEmail;
 
@@ -107,26 +148,18 @@ public class AgenteAccion
         var pagadas = pagos.Credits?.TotalPaidClasses ?? 0;
         var reservadas = pagos.Credits?.TotalBookedClasses ?? 0;
 
-        var resolucion = $"Pagos consultados para {email}. Pagos registrados: {cantidadPagos}. " +
-                          $"Creditos disponibles: {disponibles} ({pagadas} pagadas - {reservadas} reservadas).";
+        var resolucion = $"Consulté tu situación de pagos:\n" +
+                         $"• Pagos registrados: {cantidadPagos}\n" +
+                         $"• Clases disponibles: {disponibles}\n" +
+                         $"• Clases pagadas: {pagadas}\n" +
+                         $"• Clases reservadas: {reservadas}";
 
-        if (cantidadPagos == 0)
-        {
-            return AccionResult.PendienteConfirmacion(ticket.Number,
-                $"{resolucion} No se cierra el ticket porque no hay pagos registrados para validar la acreditacion.");
-        }
+        await NotificarUsuarioAsync(mcpClient, message, resolucion, ct);
 
-        if (disponibles <= 0)
-        {
-            return AccionResult.PendienteConfirmacion(ticket.Number,
-                $"{resolucion} No se cierra el ticket porque el socio no tiene creditos disponibles; requiere acreditacion manual.");
-        }
-
-        // No se cierra el ticket: queda pendiente de confirmacion del usuario.
         return AccionResult.PendienteConfirmacion(ticket.Number, resolucion);
     }
 
-    private async Task<AccionResult> EjecutarTurnoAsync(TicketResponse ticket, CancellationToken ct)
+    private async Task<AccionResult> EjecutarTurnoAsync(TicketResponse ticket, McpClient mcpClient, InboundMessage message, CancellationToken ct)
     {
         var email = ticket.CreatedByEmail;
 
@@ -138,54 +171,45 @@ public class AgenteAccion
 
         var turnosResult = await _turneraService.ConsultarTurnosAsync(email, ct);
 
-        if (turnosResult.Turnos is null)
-        {
-            var mensajeFalla = $"No pude consultar turnos para {email}.";
-            _logger.LogWarning("Consulta de turnos fallida para ticket {TicketId}", ticket.Number);
-            return AccionResult.Fallido(ticket.Number, mensajeFalla);
-        }
-
-        var turnos = turnosResult.Turnos ?? [];
         string resolucion;
 
-        if (turnos.Count == 0)
+        if (turnosResult.Turnos is null || turnosResult.Turnos.Count == 0)
         {
-            resolucion = $"Turnos consultados para {email}. No hay turnos reservados activos.";
+            resolucion = $"No encontré turnos reservados activos para {email}.";
         }
         else
         {
-            var detalle = string.Join("\n", turnos.Select((t, i) =>
+            var detalle = string.Join("\n", turnosResult.Turnos.Select((t, i) =>
             {
                 var fecha = FormatearFecha(t.Date);
                 var extra = string.IsNullOrWhiteSpace(t.TeacherName) ? "" : $" - {t.TeacherName}";
                 extra += string.IsNullOrWhiteSpace(t.Specialty) ? "" : $" ({t.Specialty})";
                 return $"  {i + 1}. {fecha} a las {t.Time}{extra}";
             }));
-            resolucion = $"Turnos consultados para {email}. Turnos reservados: {turnos.Count}.\n{detalle}";
+            resolucion = $"Tus turnos reservados son:\n{detalle}";
         }
 
+        await NotificarUsuarioAsync(mcpClient, message, resolucion, ct);
         await CerrarTicketAsync(ticket, resolucion, ct);
 
         return AccionResult.Resuelto(ticket.Number, resolucion);
     }
 
-    private async Task<AccionResult> EjecutarDisponibilidadAsync(TicketResponse ticket, CancellationToken ct)
+    private async Task<AccionResult> EjecutarDisponibilidadAsync(TicketResponse ticket, McpClient mcpClient, InboundMessage message, CancellationToken ct)
     {
         var email = ticket.CreatedByEmail;
 
         if (string.IsNullOrWhiteSpace(email))
         {
-            _logger.LogWarning("Ticket {TicketId} sin email asociado, no puedo consultar disponibilidad", ticket.Number);
+            _logger.LogWarning("Ticket {TicketId} sin email asociado", ticket.Number);
             return AccionResult.PendienteDatos(ticket.Number, "Falta el email del socio para consultar disponibilidad.");
         }
 
-        // Endpoint de disponibilidad pendiente de confirmar con el equipo
-        // Por ahora escala hasta que esté implementado en la turnera
         _logger.LogWarning("SubagenteDisponibilidad no implementado aun, escalando ticket {TicketId}", ticket.Number);
-        return await EjecutarEscalacionAsync(ticket, "Consulta de disponibilidad no implementada aún en la turnera.", ct);
+        return await EjecutarEscalacionAsync(ticket, "Consulta de disponibilidad no implementada aún en la turnera.", mcpClient, message, ct);
     }
 
-    private async Task<AccionResult> EjecutarEscalacionAsync(TicketResponse ticket, string motivo, CancellationToken ct)
+    private async Task<AccionResult> EjecutarEscalacionAsync(TicketResponse ticket, string motivo, McpClient mcpClient, InboundMessage message, CancellationToken ct)
     {
         _logger.LogInformation("Escalando ticket {TicketId}. Motivo: {Motivo}", ticket.Number, motivo);
 
@@ -202,6 +226,10 @@ public class AgenteAccion
             ResolvedAt: null);
 
         await _ticketService.UpdateTicketAsync(ticket.Id, request, ct);
+
+        var mensajeEscalacion = "Tu consulta requiere atención especializada. La derivamos al equipo de soporte nivel 2 que te contactará a la brevedad.";
+
+        await NotificarUsuarioAsync(mcpClient, message, mensajeEscalacion, ct);
 
         return AccionResult.Escalado(ticket.Number, $"Escalado a Nivel 2. Motivo: {motivo}");
     }
