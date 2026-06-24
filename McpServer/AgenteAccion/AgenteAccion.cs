@@ -95,7 +95,7 @@ public class AgenteAccion
 
         var pagos = await _turneraService.ConsultarPagosAsync(email, ct);
 
-        if (!pagos.Ok)
+        if (pagos.Credits is null && (pagos.Pagos is null || pagos.Pagos.Count == 0))
         {
             var mensajeFalla = $"No pude consultar pagos para {email}.";
             _logger.LogWarning("Consulta de pago fallida para ticket {TicketId}", ticket.Number);
@@ -138,7 +138,7 @@ public class AgenteAccion
 
         var turnosResult = await _turneraService.ConsultarTurnosAsync(email, ct);
 
-        if (!turnosResult.Ok)
+        if (turnosResult.Turnos is null)
         {
             var mensajeFalla = $"No pude consultar turnos para {email}.";
             _logger.LogWarning("Consulta de turnos fallida para ticket {TicketId}", ticket.Number);

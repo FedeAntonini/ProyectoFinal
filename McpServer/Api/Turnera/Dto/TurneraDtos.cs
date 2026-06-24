@@ -8,7 +8,6 @@ public record CreditsInfo(
     int? TotalBookedClasses);
 
 public record PagosResponse(
-    bool Ok,
     List<System.Text.Json.JsonElement>? Pagos,
     CreditsInfo? Credits);
 
@@ -19,5 +18,5 @@ public record TurnoInfo(
     string? Specialty);
 
 public record TurnosResponse(
-    bool Ok,
+    string? Email,
     List<TurnoInfo>? Turnos);

@@ -38,7 +38,7 @@ public class TurneraTools
     {
         var result = await _turneraService.ConsultarPagosAsync(email, ct);
 
-        if (!result.Ok)
+        if (result.Credits is null && (result.Pagos is null || result.Pagos.Count == 0))
             return $"No se pudieron consultar los pagos para {email}.";
 
         var cantidadPagos = result.Pagos?.Count ?? 0;
@@ -57,7 +57,7 @@ public class TurneraTools
     {
         var result = await _turneraService.ConsultarTurnosAsync(email, ct);
 
-        if (!result.Ok)
+        if (result.Turnos is null)
             return $"No se pudieron consultar los turnos para {email}.";
 
         var turnos = result.Turnos ?? [];
