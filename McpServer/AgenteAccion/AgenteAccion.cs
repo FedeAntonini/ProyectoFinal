@@ -218,7 +218,7 @@ public class AgenteAccion
             Title: null,
             Description: null,
             State: 2,
-            StateLabel: "Escalado",
+            StateLabel: "In Progress",
             Priority: ticket.Priority <= 2 ? ticket.Priority : 2,
             PriorityLabel: ticket.Priority <= 2 ? ticket.PriorityLabel : "High",
             AssignedTo: null,
