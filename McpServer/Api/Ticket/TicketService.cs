@@ -24,15 +24,23 @@ public class TicketService : ITicketService
     }
 
     public async Task<TicketResponse?> UpdateTicketAsync(int ticketId, UpdateTicketRequest request, CancellationToken ct = default)
-{
-    var response = await _http.PutAsJsonAsync($"/tickets/{ticketId}", request, ct);
+    {
+        var response = await _http.PutAsJsonAsync($"/tickets/{ticketId}", request, ct);
 
-    if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-        return null;
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            return null;
 
-    response.EnsureSuccessStatusCode();
+        response.EnsureSuccessStatusCode();
 
-    // El endpoint devuelve 204 No Content, no hay body para parsear
-    return await GetTicketAsync(ticketId, ct);
-}
+        // El endpoint devuelve 204 No Content, no hay body para parsear
+        return await GetTicketAsync(ticketId, ct);
+    }
+    public async Task<TicketResponse> CreateFromAgentAsync(CreateAgentTicketRequest request, CancellationToken ct = default)
+    {
+        var response = await _http.PostAsJsonAsync("/tickets/from-agent", request, ct);
+        response.EnsureSuccessStatusCode();
+
+        return await response.Content.ReadFromJsonAsync<TicketResponse>(ct)
+            ?? throw new InvalidOperationException("La API no devolvió el ticket creado.");
+    }
 }

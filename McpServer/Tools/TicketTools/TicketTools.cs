@@ -68,4 +68,31 @@ public class TicketTools
             ? $"Ticket {ticketId} no encontrado."
             : $"AffectedSystem del ticket {ticketId} actualizado a '{sistemaAfectado}'.";
     }
+
+    [McpServerTool, Description("Registra un nuevo incidente de soporte. Util para pruebas sin necesidad de ServiceNow.")]
+    public async Task<string> RegistrarIncidente(
+        [Description("Descripción del problema")]
+        string descripcion,
+        [Description("Sistema afectado: acceso, turnos, pagos, disponibilidad")]
+        string sistema,
+        [Description("Tipo de error: dato_incorrecto, operacion_bloqueada, inconsistencia, error_sistema")]
+        string tipoError,
+        [Description("Email del usuario que reporta")]
+        string usuario,
+        CancellationToken ct = default)
+    {
+        var ticket = await _ticketService.CreateFromAgentAsync(
+            new CreateAgentTicketRequest(descripcion, sistema, tipoError, usuario), ct);
+
+        return System.Text.Json.JsonSerializer.Serialize(new
+        {
+            ticketId = ticket.Number,
+            id = ticket.Id,
+            descripcion = ticket.Description,
+            sistema,
+            tipoError,
+            usuario = ticket.CreatedByEmail,
+            estado = ticket.StateLabel
+        });
+    }
 }
