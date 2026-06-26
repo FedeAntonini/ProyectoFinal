@@ -1,4 +1,5 @@
 ﻿namespace McpServer.Api.Tickets.Dto;
+
 public record TicketResponse(
     int Id,
     string SysId,
@@ -9,6 +10,8 @@ public record TicketResponse(
     string StateLabel,
     int Priority,
     string PriorityLabel,
+    string CreatedByName,
+    string CreatedByEmail,
     DateTime OpenedAt,
     DateTime UpdatedAt,
     DateTime? ResolvedAt,
