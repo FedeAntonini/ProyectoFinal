@@ -26,6 +26,12 @@ public static class MarkdownKnowledgeBase
             .FirstOrDefault();
     }
 
+    public static List<KnowledgeBaseSearchResult> GetAllArticles()
+    {
+        var articles = CachedArticles ??= Load();
+        return articles.ToList();
+    }
+
     private static IReadOnlyList<KnowledgeBaseSearchResult> Load()
     {
         var paths = FindKnowledgeBaseFiles();

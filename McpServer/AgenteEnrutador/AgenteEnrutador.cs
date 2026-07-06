@@ -4,6 +4,7 @@ using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using McpServer.MessageQueue;
+using static McpServer.Api.Kb.MarkdownKnowledgeBase;
 
 namespace McpServer.Agentes;
 
@@ -12,8 +13,8 @@ public class AgenteEnrutador
     private readonly LlmGateway _llmGateway;
     private readonly IConfiguration _config;
     private readonly ILogger<AgenteEnrutador> _logger;
-    
-    private static readonly string SystemPrompt = 
+
+    private static readonly string SystemPrompt =
         new AgentPromptLoader().Load("enrutador.md");
 
     public AgenteEnrutador(
@@ -28,77 +29,91 @@ public class AgenteEnrutador
 
     public async Task<EnrutadorResult> ProcesarAsync(int ticketId, int agentRunId, string correlationId, string customerId, int conversationId, CancellationToken ct = default)
     {
-    _logger.LogInformation("AgenteEnrutador procesando ticket {TicketId}", ticketId);
+        _logger.LogInformation("AgenteEnrutador procesando ticket {TicketId}", ticketId);
 
-    await using var mcpClient = await CreateMcpClientAsync(ct);
+        await using var mcpClient = await CreateMcpClientAsync(ct);
 
-    // Obtener el ticket via tool
-    var ticketResult = await mcpClient.CallToolAsync(
-        "get_ticket",
-        new Dictionary<string, object?> { ["ticketId"] = ticketId },
-        cancellationToken: ct);
+        // Obtener el ticket via tool
+        var ticketResult = await mcpClient.CallToolAsync(
+            "get_ticket",
+            new Dictionary<string, object?> { ["ticketId"] = ticketId },
+            cancellationToken: ct);
 
-    var ticket = ticketResult.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text
-        ?? throw new InvalidOperationException("get_ticket returned no content.");
+        var ticket = ticketResult.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text
+            ?? throw new InvalidOperationException("get_ticket returned no content.");
 
-    _logger.LogInformation("Ticket obtenido: {Ticket}", ticket);
+        _logger.LogInformation("Ticket obtenido: {Ticket}", ticket);
 
-    // Llamar al LLM para que razone y decida
-    var llmResponse = await _llmGateway.CompleteAsync(
-        mcpClient,
-        SystemPrompt,
-        [new(ChatRole.User, $"Datos del ticket:\n{ticket}")],
-        agentRunId,
-        "enrutador",
-        ct);
+        var articlesResult = await mcpClient.CallToolAsync(
+            "get_all_articles",
+            new Dictionary<string, object?>(),
+            cancellationToken: ct);
+        var articlesJson = string.Join("\n", articlesResult.Content
+            .OfType<TextContentBlock>()
+            .Select(c => c.Text));
+        var articles = JsonSerializer.Deserialize<List<KnowledgeBaseSearchResult>>(
+            articlesJson,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+        var articlesText = string.Join("\n\n", articles.Select(a => a.ToString()));
 
-    _logger.LogInformation("LLM response: {Response}", llmResponse);
+        var llmResponse = await _llmGateway.CompleteAsync(
+            mcpClient,
+            SystemPrompt,
+            [
+                new(ChatRole.User, $"Datos del ticket:\n{ticket}"),
+        new(ChatRole.User, $"Artículos de la base de conocimiento:\n{articlesText}")
+            ],
+            agentRunId,
+            "enrutador",
+            ct);
 
-    // Parsear la decisión
-    var decision = JsonSerializer.Deserialize<EnrutadorDecision>(llmResponse,
-        new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-        ?? throw new InvalidOperationException("Failed to deserialize EnrutadorDecision.");
+        _logger.LogInformation("LLM response: {Response}", llmResponse);
 
-    _logger.LogInformation("Enrutador decision for ticket {TicketId}: {Agente}", ticketId, decision.Agente);
+        // Parsear la decisión
+        var decision = JsonSerializer.Deserialize<EnrutadorDecision>(llmResponse,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+            ?? throw new InvalidOperationException("Failed to deserialize EnrutadorDecision.");
 
-    // Setear el AffectedSystem en el ticket según la decisión
-    var sistemaAfectado = MapearAgenteASistema(decision.Agente);
-    await mcpClient.CallToolAsync(
-        "actualizar_sistema_afectado",
-        new Dictionary<string, object?>
-        {
-            ["ticketId"] = ticketId,
-            ["sistemaAfectado"] = sistemaAfectado
-        },
-        cancellationToken: ct);
+        _logger.LogInformation("Enrutador decision for ticket {TicketId}: {Agente}", ticketId, decision.Agente);
 
-    _logger.LogInformation("AffectedSystem '{Sistema}' seteado para ticket {TicketId}", sistemaAfectado, ticketId);
+        // Setear el AffectedSystem en el ticket según la decisión
+        var sistemaAfectado = MapearAgenteASistema(decision.Agente);
+        await mcpClient.CallToolAsync(
+            "actualizar_sistema_afectado",
+            new Dictionary<string, object?>
+            {
+                ["ticketId"] = ticketId,
+                ["sistemaAfectado"] = sistemaAfectado
+            },
+            cancellationToken: ct);
 
-    var resultado = new EnrutadorResult(ticketId, decision.Agente, decision.Motivo);
+        _logger.LogInformation("AffectedSystem '{Sistema}' seteado para ticket {TicketId}", sistemaAfectado, ticketId);
 
-    // Encolar TicketParaEjecutar para que AgenteAccion tome la decision
-    await mcpClient.CallToolAsync(
-        "send_outbound_message",
-        new Dictionary<string, object?>
-        {
-            ["ticketId"] = ticketId.ToString(),
-            ["correlationId"] = correlationId,
-            ["customerId"] = customerId,
-            ["targetAgent"] = "enrutador",
-            ["action"] = "agente_accion",
-            ["payload"] = JsonSerializer.Serialize(new
+        var resultado = new EnrutadorResult(ticketId, decision.Agente, decision.Motivo);
+
+        // Encolar TicketParaEjecutar para que AgenteAccion tome la decision
+        await mcpClient.CallToolAsync(
+            "send_outbound_message",
+            new Dictionary<string, object?>
+            {
+                ["ticketId"] = ticketId.ToString(),
+                ["correlationId"] = correlationId,
+                ["customerId"] = customerId,
+                ["targetAgent"] = "enrutador",
+                ["action"] = "agente_accion",
+                ["payload"] = JsonSerializer.Serialize(new
                 {
                     resultado.TicketId,
                     resultado.Agente,
                     resultado.Motivo,
                     ConversationId = conversationId
                 })
-        },
-        cancellationToken: ct);
+            },
+            cancellationToken: ct);
 
-    _logger.LogInformation("agente_accion encolado para ticket {TicketId}", ticketId);
+        _logger.LogInformation("agente_accion encolado para ticket {TicketId}", ticketId);
 
-    return resultado;
+        return resultado;
     }
 
     private static string MapearAgenteASistema(string agente) => agente switch
@@ -171,7 +186,7 @@ public class AgenteEnrutador
 
     private record AgentRunResult(int Id, int TicketId, string Status, DateTime StartedAt, DateTime? EndedAt);
 
-        private record EnrutadorDecision(string Agente, string Motivo);
-    }
+    private record EnrutadorDecision(string Agente, string Motivo);
+}
 
-    public record EnrutadorResult(int TicketId, string Agente, string Motivo);
+public record EnrutadorResult(int TicketId, string Agente, string Motivo);

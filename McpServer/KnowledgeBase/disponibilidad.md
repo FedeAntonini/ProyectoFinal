@@ -20,7 +20,7 @@ Cuando escalar:
 Sistema: disponibilidad
 Confianza: media
 Tags: disponibilidad, cupo, cupos, completo, sin lugares, no puedo reservar, clase llena, no hay lugar
-Acciones: consultar_disponibilidad
+Acciones: AgenteAccionDisponibilidad
 Descripcion: La turnera muestra un turno como completo aunque deberia tener lugares disponibles.
 Sintomas: Turno sin cupos visibles, clase bloqueada, el socio no puede reservar aunque cree que hay disponibilidad.
 Causa probable: Conteo de reservas desactualizado, cancelacion no procesada o limite de cupos alcanzado.

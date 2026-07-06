@@ -23,7 +23,7 @@ Cuando escalar:
 Sistema: pagos
 Confianza: alta
 Tags: pago, pagos, cobro, credito, creditos, paquete, clases pagadas, no me acreditaron, comprobante, abone
-Acciones: consultar_pago
+Acciones: AgenteAccionPago
 Descripcion: El socio abono un paquete de clases pero sus creditos no se actualizaron en la turnera.
 Sintomas: El pago figura realizado o el usuario tiene comprobante, pero los creditos disponibles siguen en cero, no alcanzan para reservar o se acreditaron menos clases que las abonadas.
 Causa probable: Error de procesamiento del pago, demora de acreditacion o falla en la actualizacion de creditos.

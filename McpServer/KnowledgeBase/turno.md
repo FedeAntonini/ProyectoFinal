@@ -20,7 +20,7 @@ Cuando escalar:
 Sistema: turnos
 Confianza: media
 Tags: turno, turnos, reserva, reservas, clase reservada, ver mis clases, no aparece mi reserva, agenda, horario reservado
-Acciones: consultar_turnos
+Acciones: AgenteAccionTurnos
 Descripcion: El socio realizo una reserva y recibio confirmacion, pero no la ve en su lista de turnos.
 Sintomas: Reserva ausente en la app, confirmacion recibida por otro canal, turno no visible en la agenda del socio.
 Causa probable: Error de sincronizacion, registro incompleto de reserva o problema de consulta en la app.
