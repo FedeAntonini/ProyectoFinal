@@ -23,7 +23,7 @@ Cuando escalar:
 Sistema: acceso
 Confianza: alta
 Tags: acceso, login, sesion, credenciales, password, contrasena, iniciar sesion, no puedo entrar, no me deja ingresar, cuenta bloqueada, error de login
-Acciones: AgenteAccionAcceso
+Acciones: AgenteAccionTurnos
 Descripcion: El socio no puede iniciar sesion en la app de la turnera o recibe error de credenciales invalidas.
 Sintomas: Error de credenciales, password incorrecto, pantalla de login no avanza, sesion expirada o acceso bloqueado.
 Causa probable: Password incorrecto, sesion expirada, cuenta bloqueada o credenciales desactualizadas.
