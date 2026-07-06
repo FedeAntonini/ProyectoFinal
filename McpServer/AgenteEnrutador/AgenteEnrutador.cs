@@ -48,20 +48,16 @@ public class AgenteEnrutador
             "get_all_articles",
             new Dictionary<string, object?>(),
             cancellationToken: ct);
-        var articlesJson = string.Join("\n", articlesResult.Content
-            .OfType<TextContentBlock>()
-            .Select(c => c.Text));
-        var articles = JsonSerializer.Deserialize<List<KnowledgeBaseSearchResult>>(
-            articlesJson,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
-        var articlesText = string.Join("\n\n", articles.Select(a => a.ToString()));
+
+        var articles = articlesResult.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text
+            ?? throw new InvalidOperationException("get_all_articles returned no content.");
 
         var llmResponse = await _llmGateway.CompleteAsync(
             mcpClient,
             SystemPrompt,
             [
                 new(ChatRole.User, $"Datos del ticket:\n{ticket}"),
-        new(ChatRole.User, $"Artículos de la base de conocimiento:\n{articlesText}")
+        new(ChatRole.User, $"Artículos de la base de conocimiento:\n{articles}")
             ],
             agentRunId,
             "enrutador",

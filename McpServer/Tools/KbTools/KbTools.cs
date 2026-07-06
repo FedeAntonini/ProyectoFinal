@@ -21,4 +21,14 @@ public class KbTools
 
         return System.Text.Json.JsonSerializer.Serialize(resultado, new System.Text.Json.JsonSerializerOptions { WriteIndented = false });
     }
+
+    [McpServerTool, Description("Trae todos los articulos de la base de conocimiento")]
+    public string GetAllArticles()
+    {
+        var resultado = MarkdownKnowledgeBase.GetAllArticles();
+        if (resultado is null)
+            return "No se encontró un artículo de KB aplicable. Se recomienda escalar.";
+
+        return System.Text.Json.JsonSerializer.Serialize(resultado, new System.Text.Json.JsonSerializerOptions { WriteIndented = false });
+    }
 }
